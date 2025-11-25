@@ -1,15 +1,30 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 from datetime import datetime
+import webbrowser
+import requests
+import subprocess
+import os
+import sys
+import threading
+
+# Version Information
+APP_VERSION = "0.2"
+APP_CHANNEL = "Beta"
+APP_NAME = "MongoDB Query Generator"
+GITHUB_REPO = "Rushikesh-techy/MongoDb-Query-Generator"
 
 class MongoDBQueryGenerator:
     def __init__(self, root):
         self.root = root
-        self.root.title("MongoDB Query Generator")
+        self.root.title(f"{APP_NAME} v{APP_VERSION} ({APP_CHANNEL})")
         
         # Start maximized
         self.root.state('zoomed')
         self.root.minsize(900, 650)
+        
+        # Create Menu Bar
+        self.create_menu_bar()
         
         # Database Name
         tk.Label(root, text="Database Name:", font=("Arial", 10)).grid(row=0, column=0, padx=10, pady=5, sticky="w")
@@ -32,13 +47,13 @@ class MongoDBQueryGenerator:
         tk.Label(root, text="Query/Filter:", font=("Arial", 10)).grid(row=3, column=0, padx=10, pady=5, sticky="nw")
         self.query_text = scrolledtext.ScrolledText(root, width=60, height=8, font=("Consolas", 9))
         self.query_text.grid(row=3, column=1, padx=10, pady=5)
-        self.query_text.insert(tk.END, '{\n    bpc: 70022487,\n    documentCode: {\n        \'$in\': [\n            "uuid-1",\n            "uuid-2"\n        ]\n    }\n}')
+        self.query_text.insert(tk.END, '{\n    Field 1: Value,\n    Field 2: {\n        \'$in\': [\n            "Value-1",\n            "Value-2"\n        ]\n    }\n}')
         
         # Update/Set Document
         tk.Label(root, text="Update Document ($set):", font=("Arial", 10)).grid(row=4, column=0, padx=10, pady=5, sticky="nw")
         self.document_text = scrolledtext.ScrolledText(root, width=60, height=8, font=("Consolas", 9))
         self.document_text.grid(row=4, column=1, padx=10, pady=5)
-        self.document_text.insert(tk.END, '{ timelinesPostponedOn: new Date() }')
+        self.document_text.insert(tk.END, '{ Field 3: Value, Field 4: Value }')
         
         # Buttons
         button_frame = tk.Frame(root)
@@ -83,7 +98,219 @@ class MongoDBQueryGenerator:
         root.grid_rowconfigure(7, weight=1)
         root.grid_columnconfigure(1, weight=1)
         
+        # Status Bar / Footer
+        status_bar = tk.Frame(root, relief=tk.SUNKEN, bd=1)
+        status_bar.grid(row=8, column=0, columnspan=2, sticky="ew", padx=0, pady=0)
+        
+        version_label = tk.Label(status_bar, text=f"v{APP_VERSION} ({APP_CHANNEL})", 
+                                font=("Arial", 9), anchor=tk.W, padx=10)
+        version_label.pack(side=tk.LEFT)
+        
+        copyright_label = tk.Label(status_bar, text="© 2025 Rushikesh Patil", 
+                                  font=("Arial", 9), anchor=tk.E, padx=10)
+        copyright_label.pack(side=tk.RIGHT)
+        
         self.generated_query = None
+    
+    def create_menu_bar(self):
+        """Create the menu bar with About menu"""
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+        
+        # About Menu
+        about_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="About", menu=about_menu)
+        about_menu.add_command(label="Report a Bug", command=self.report_bug)
+        about_menu.add_command(label="Request a New Feature", command=self.request_feature)
+        about_menu.add_separator()
+        about_menu.add_command(label="Check for Updates", command=self.check_updates)
+        about_menu.add_separator()
+        about_menu.add_command(label="About this Version", command=self.show_about)
+    
+    def report_bug(self):
+        """Open GitHub issues page for bug reporting"""
+        try:
+            webbrowser.open("https://github.com/Rushikesh-techy/MongoDb-Query-Generator/issues/new?labels=bug&template=bug_report.md")
+        except:
+            messagebox.showinfo("Report a Bug", 
+                              "Please visit:\nhttps://github.com/Rushikesh-techy/MongoDb-Query-Generator/issues\n\nto report a bug.")
+    
+    def request_feature(self):
+        """Open GitHub issues page for feature requests"""
+        try:
+            webbrowser.open("https://github.com/Rushikesh-techy/MongoDb-Query-Generator/issues/new?labels=enhancement&template=feature_request.md")
+        except:
+            messagebox.showinfo("Request a Feature", 
+                              "Please visit:\nhttps://github.com/Rushikesh-techy/MongoDb-Query-Generator/issues\n\nto request a new feature.")
+    
+    def check_updates(self):
+        """Check for application updates from GitHub"""
+        def check_in_background():
+            try:                
+                # Fetch latest release from GitHub API
+                api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+                response = requests.get(api_url, timeout=10)
+                
+                if response.status_code == 404:
+                    # No releases found
+                    self.root.after(0, lambda: messagebox.showinfo("No Updates", 
+                        f"Current Version: {APP_VERSION} ({APP_CHANNEL})\n\nNo releases available yet.\n\n"
+                        f"Visit GitHub for more information:\nhttps://github.com/{GITHUB_REPO}"))
+                    return
+                
+                response.raise_for_status()
+                release_data = response.json()
+                
+                # Extract version information
+                latest_version = release_data['tag_name'].lstrip('v')
+                release_name = release_data['name']
+                release_notes = release_data['body']
+                download_url = None
+                
+                # Extract channel from release name or body (e.g., "Beta", "Stable")
+                latest_channel = "Stable"  # Default
+                if release_name:
+                    if 'beta' in release_name.lower() or 'β' in release_name.lower():
+                        latest_channel = "Beta"
+                    elif 'alpha' in release_name.lower() or 'α' in release_name.lower():
+                        latest_channel = "Alpha"
+                    elif 'rc' in release_name.lower() or 'release candidate' in release_name.lower():
+                        latest_channel = "RC"
+                
+                # Find the .exe asset
+                for asset in release_data.get('assets', []):
+                    if asset['name'].endswith('.exe'):
+                        download_url = asset['browser_download_url']
+                        break
+                
+                # Compare versions
+                if self.compare_versions(latest_version, APP_VERSION) > 0:
+                    # New version available
+                    update_msg = f"""New Version Available!
+
+Current Version: {APP_VERSION} ({APP_CHANNEL})
+Latest Version: {latest_version} ({latest_channel})
+
+Release: {release_name}
+
+Do you want to download and install the update?
+
+Note: The application will close and updater will handle the installation."""
+                    
+                    if download_url:
+                        result = messagebox.askyesno("Update Available", update_msg)
+                        if result:
+                            self.launch_updater(download_url, latest_version)
+                    else:
+                        messagebox.showinfo("Update Available", 
+                            f"{update_msg}\n\nPlease visit GitHub to download manually:\n"
+                            f"https://github.com/{GITHUB_REPO}/releases/latest")
+                else:
+                    # Already on latest version
+                    self.root.after(0, lambda: messagebox.showinfo("No Updates", 
+                        f"You are already using the latest version!\n\n"
+                        f"Current Version: {APP_VERSION} ({APP_CHANNEL})\n"
+                        f"Latest Version: {latest_version} ({latest_channel})"))
+                        
+            except requests.exceptions.RequestException as e:
+                self.root.after(0, lambda: messagebox.showerror("Connection Error", 
+                    f"Failed to check for updates:\n{str(e)}\n\n"
+                    f"Please check your internet connection or visit:\n"
+                    f"https://github.com/{GITHUB_REPO}/releases"))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Error", 
+                    f"An error occurred while checking for updates:\n{str(e)}"))
+        
+        # Run check in background thread
+        threading.Thread(target=check_in_background, daemon=True).start()
+    
+    def compare_versions(self, version1, version2):
+        """Compare two version strings. Returns: 1 if v1>v2, -1 if v1<v2, 0 if equal"""
+        def normalize(v):
+            return [int(x) for x in v.split('.')]
+        
+        try:
+            v1_parts = normalize(version1)
+            v2_parts = normalize(version2)
+            
+            # Pad with zeros to make same length
+            max_len = max(len(v1_parts), len(v2_parts))
+            v1_parts.extend([0] * (max_len - len(v1_parts)))
+            v2_parts.extend([0] * (max_len - len(v2_parts)))
+            
+            for i in range(max_len):
+                if v1_parts[i] > v2_parts[i]:
+                    return 1
+                elif v1_parts[i] < v2_parts[i]:
+                    return -1
+            return 0
+        except:
+            return 0
+    
+    def launch_updater(self, download_url, new_version):
+        """Launch the updater application to download and install update"""
+        try:
+            # Get paths
+            if getattr(sys, 'frozen', False):
+                # Running as executable
+                app_path = sys.executable
+                app_dir = os.path.dirname(app_path)
+                updater_path = os.path.join(app_dir, 'updater.exe')
+            else:
+                # Running as script
+                app_path = os.path.abspath(__file__)
+                app_dir = os.path.dirname(app_path)
+                updater_path = os.path.join(app_dir, 'updater.py')
+            
+            # Check if updater exists
+            if not os.path.exists(updater_path):
+                messagebox.showerror("Updater Not Found", 
+                    f"Updater not found at: {updater_path}\n\n"
+                    f"Please download manually from:\n"
+                    f"https://github.com/{GITHUB_REPO}/releases/latest")
+                return
+            
+            # Launch updater with parameters
+            if updater_path.endswith('.exe'):
+                subprocess.Popen([updater_path, download_url, new_version, app_path])
+            else:
+                subprocess.Popen([sys.executable, updater_path, download_url, new_version, app_path])
+            
+            # Close current application
+            messagebox.showinfo("Starting Update", 
+                "Updater launched. This application will now close.")
+            self.root.quit()
+            
+        except Exception as e:
+            messagebox.showerror("Launch Error", 
+                f"Failed to launch updater:\n{str(e)}\n\n"
+                f"Please download manually from:\n"
+                f"https://github.com/{GITHUB_REPO}/releases/latest")
+    
+    def show_about(self):
+        """Show about dialog with version information"""
+        about_text = f"""
+{APP_NAME}
+Version: {APP_VERSION}
+Channel: {APP_CHANNEL}
+
+A simple yet powerful tool to generate MongoDB JavaScript queries.
+
+Features:
+• Support for updateMany, updateOne, find operations
+• Support for insertOne, insertMany operations
+• Support for deleteMany, deleteOne operations
+• Copy to clipboard functionality
+• Save queries as .js files
+• JavaScript syntax with MongoDB shell format
+
+Developer: Rushikesh Patil
+Repository: github.com/Rushikesh-techy/MongoDb-Query-Generator
+
+© 2025 All Rights Reserved
+        """
+        
+        messagebox.showinfo("About this Version", about_text)
     
     def on_operation_change(self, event):
         """Update labels based on operation type"""
