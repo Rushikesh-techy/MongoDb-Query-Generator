@@ -174,8 +174,6 @@ class MongoDBQueryGenerator:
                         latest_channel = "Beta"
                     elif 'alpha' in release_name.lower() or 'α' in release_name.lower():
                         latest_channel = "Alpha"
-                    elif 'rc' in release_name.lower() or 'release candidate' in release_name.lower():
-                        latest_channel = "RC"
                 
                 # Find the .exe asset
                 for asset in release_data.get('assets', []):
