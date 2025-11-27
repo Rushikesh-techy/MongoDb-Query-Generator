@@ -9,7 +9,7 @@ import sys
 import threading
 
 # Version Information
-APP_VERSION = "0.2"
+APP_VERSION = "0.3"
 APP_CHANNEL = "Beta"
 APP_NAME = "MongoDB Query Generator"
 GITHUB_REPO = "Rushikesh-techy/MongoDb-Query-Generator"
@@ -147,22 +147,25 @@ class MongoDBQueryGenerator:
         """Check for application updates from GitHub"""
         def check_in_background():
             try:                
-                # Fetch latest release from GitHub API
-                api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+                # Fetch all releases from GitHub API (including prereleases)
+                api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
                 response = requests.get(api_url, timeout=10)
                 
-                if response.status_code == 404:
+                response.raise_for_status()
+                releases = response.json()
+                
+                if not releases or len(releases) == 0:
                     # No releases found
                     self.root.after(0, lambda: messagebox.showinfo("No Updates", 
                         f"Current Version: {APP_VERSION} ({APP_CHANNEL})\n\nNo releases available yet.\n\n"
                         f"Visit GitHub for more information:\nhttps://github.com/{GITHUB_REPO}"))
                     return
                 
-                response.raise_for_status()
-                release_data = response.json()
+                # Get the first (latest) release
+                release_data = releases[0]
                 
                 # Extract version information
-                latest_version = release_data['tag_name'].lstrip('v')
+                latest_version = release_data['tag_name'].lstrip('v').lower().removesuffix('-beta').removesuffix('-alpha').removesuffix('-stable')
                 release_name = release_data['name']
                 release_notes = release_data['body']
                 download_url = None
