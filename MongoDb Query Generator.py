@@ -9,7 +9,7 @@ import sys
 import threading
 
 # Version Information
-APP_VERSION = "0.2"
+APP_VERSION = "0.3"
 APP_CHANNEL = "Beta"
 APP_NAME = "MongoDB Query Generator"
 GITHUB_REPO = "Rushikesh-techy/MongoDb-Query-Generator"
@@ -17,7 +17,7 @@ GITHUB_REPO = "Rushikesh-techy/MongoDb-Query-Generator"
 class MongoDBQueryGenerator:
     def __init__(self, root):
         self.root = root
-        self.root.title(f"{APP_NAME} v{APP_VERSION} ({APP_CHANNEL})")
+        self.root.title(f"{APP_NAME}")
         
         # Start maximized
         self.root.state('zoomed')
@@ -147,22 +147,25 @@ class MongoDBQueryGenerator:
         """Check for application updates from GitHub"""
         def check_in_background():
             try:                
-                # Fetch latest release from GitHub API
-                api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+                # Fetch all releases from GitHub API (including prereleases)
+                api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
                 response = requests.get(api_url, timeout=10)
                 
-                if response.status_code == 404:
+                response.raise_for_status()
+                releases = response.json()
+                
+                if not releases or len(releases) == 0:
                     # No releases found
                     self.root.after(0, lambda: messagebox.showinfo("No Updates", 
                         f"Current Version: {APP_VERSION} ({APP_CHANNEL})\n\nNo releases available yet.\n\n"
                         f"Visit GitHub for more information:\nhttps://github.com/{GITHUB_REPO}"))
                     return
                 
-                response.raise_for_status()
-                release_data = response.json()
+                # Get the first (latest) release
+                release_data = releases[0]
                 
                 # Extract version information
-                latest_version = release_data['tag_name'].lstrip('v')
+                latest_version = release_data['tag_name'].lstrip('v').lower().removesuffix('-beta').removesuffix('-alpha').removesuffix('-stable')
                 release_name = release_data['name']
                 release_notes = release_data['body']
                 download_url = None
@@ -175,11 +178,15 @@ class MongoDBQueryGenerator:
                     elif 'alpha' in release_name.lower() or 'α' in release_name.lower():
                         latest_channel = "Alpha"
                 
-                # Find the .exe asset
+                # Find the .exe assets
+                download_url = None
+                updater_url = None
+                
                 for asset in release_data.get('assets', []):
-                    if asset['name'].endswith('.exe'):
+                    if asset['name'].lower() == 'mongodbquerygenerator.exe':
                         download_url = asset['browser_download_url']
-                        break
+                    elif asset['name'].lower() == 'updater.exe':
+                        updater_url = asset['browser_download_url']
                 
                 # Compare versions
                 if self.compare_versions(latest_version, APP_VERSION) > 0:
@@ -198,7 +205,7 @@ Note: The application will close and updater will handle the installation."""
                     if download_url:
                         result = messagebox.askyesno("Update Available", update_msg)
                         if result:
-                            self.launch_updater(download_url, latest_version)
+                            self.launch_updater(download_url, latest_version, updater_url)
                     else:
                         messagebox.showinfo("Update Available", 
                             f"{update_msg}\n\nPlease visit GitHub to download manually:\n"
@@ -245,45 +252,55 @@ Note: The application will close and updater will handle the installation."""
         except:
             return 0
     
-    def launch_updater(self, download_url, new_version):
+    def launch_updater(self, download_url, new_version, updater_url=None):
         """Launch the updater application to download and install update"""
-        try:
-            # Get paths
-            if getattr(sys, 'frozen', False):
-                # Running as executable
-                app_path = sys.executable
-                app_dir = os.path.dirname(app_path)
-                updater_path = os.path.join(app_dir, 'updater.exe')
-            else:
-                # Running as script
-                app_path = os.path.abspath(__file__)
-                app_dir = os.path.dirname(app_path)
-                updater_path = os.path.join(app_dir, 'updater.py')
-            
-            # Check if updater exists
-            if not os.path.exists(updater_path):
-                messagebox.showerror("Updater Not Found", 
-                    f"Updater not found at: {updater_path}\n\n"
+        def launch_and_close():
+            try:
+                # Get paths
+                if getattr(sys, 'frozen', False):
+                    # Running as executable
+                    app_path = sys.executable
+                    app_dir = os.path.dirname(app_path)
+                    updater_path = os.path.join(app_dir, 'updater.exe')
+                else:
+                    # Running as script
+                    app_path = os.path.abspath(__file__)
+                    app_dir = os.path.dirname(app_path)
+                    updater_path = os.path.join(app_dir, 'updater.py')
+                
+                # Check if updater exists
+                if not os.path.exists(updater_path):
+                    self.root.after(0, lambda: messagebox.showerror("Updater Not Found", 
+                        f"Updater not found at: {updater_path}\n\n"
+                        f"Please download manually from:\n"
+                        f"https://github.com/{GITHUB_REPO}/releases/latest"))
+                    return
+                
+                # Launch updater with parameters (pass updater_url as 4th parameter)
+                if updater_path.endswith('.exe'):
+                    if updater_url:
+                        subprocess.Popen([updater_path, download_url, new_version, app_path, updater_url],
+                                       creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+                    else:
+                        subprocess.Popen([updater_path, download_url, new_version, app_path],
+                                       creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+                else:
+                    if updater_url:
+                        subprocess.Popen([sys.executable, updater_path, download_url, new_version, app_path, updater_url])
+                    else:
+                        subprocess.Popen([sys.executable, updater_path, download_url, new_version, app_path])
+                
+                # Close current application immediately
+                self.root.after(0, self.root.quit)
+                
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Launch Error", 
+                    f"Failed to launch updater:\n{str(e)}\n\n"
                     f"Please download manually from:\n"
-                    f"https://github.com/{GITHUB_REPO}/releases/latest")
-                return
-            
-            # Launch updater with parameters
-            if updater_path.endswith('.exe'):
-                subprocess.Popen([updater_path, download_url, new_version, app_path])
-            else:
-                subprocess.Popen([sys.executable, updater_path, download_url, new_version, app_path])
-            
-            # Close current application
-            messagebox.showinfo("Starting Update", 
-                "Updater launched. This application will now close.")
-            self.root.quit()
-            
-        except Exception as e:
-            messagebox.showerror("Launch Error", 
-                f"Failed to launch updater:\n{str(e)}\n\n"
-                f"Please download manually from:\n"
-                f"https://github.com/{GITHUB_REPO}/releases/latest")
+                    f"https://github.com/{GITHUB_REPO}/releases/latest"))
+        
+        # Launch in separate thread to avoid blocking
+        threading.Thread(target=launch_and_close, daemon=True).start()
     
     def show_about(self):
         """Show about dialog with version information"""

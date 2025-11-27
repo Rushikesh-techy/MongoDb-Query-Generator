@@ -35,6 +35,7 @@ class UpdaterApp:
             self.download_url = sys.argv[1]
             self.new_version = sys.argv[2] if len(sys.argv) > 2 else "Unknown"
             self.app_path = sys.argv[3] if len(sys.argv) > 3 else None
+            self.updater_url = sys.argv[4] if len(sys.argv) > 4 else None  # New updater URL
         else:
             messagebox.showerror("Error", "Invalid updater launch. Missing parameters.")
             self.root.destroy()
@@ -84,8 +85,8 @@ class UpdaterApp:
     def download_and_install(self):
         """Download and install the update"""
         try:
-            # Step 1: Download the new version
-            self.update_status("Downloading update...", f"URL: {self.download_url}")
+            # Step 1: Download the main application
+            self.update_status("Downloading main application...", f"URL: {self.download_url}")
             
             response = requests.get(self.download_url, stream=True)
             total_size = int(response.headers.get('content-length', 0))
@@ -101,10 +102,43 @@ class UpdaterApp:
                         downloaded += len(chunk)
                         if total_size:
                             percent = (downloaded / total_size) * 100
-                            self.update_status(f"Downloading... {percent:.1f}%", 
+                            self.update_status(f"Downloading main app... {percent:.1f}%", 
                                              f"Downloaded: {downloaded / (1024*1024):.2f} MB")
             
-            self.update_status("Download complete!", f"Saved to: {temp_file}")
+            self.update_status("Main application downloaded!", f"Saved to: {temp_file}")
+            time.sleep(1)
+            
+            # Step 1.5: Check if updater.exe URL was provided
+            temp_updater_file = None
+            
+            if self.updater_url:
+                try:
+                    self.update_status("Downloading updater update...", f"URL: {self.updater_url}")
+                    
+                    updater_response = requests.get(self.updater_url, stream=True)
+                    updater_response.raise_for_status()
+                    updater_size = int(updater_response.headers.get('content-length', 0))
+                    
+                    temp_updater_file = Path(os.path.expanduser("~")) / "Downloads" / "updater_update.exe"
+                    
+                    with open(temp_updater_file, 'wb') as f:
+                        downloaded = 0
+                        for chunk in updater_response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if updater_size:
+                                    percent = (downloaded / updater_size) * 100
+                                    self.update_status(f"Downloading updater... {percent:.1f}%", 
+                                                     f"Downloaded: {downloaded / (1024*1024):.2f} MB")
+                    
+                    self.update_status("Updater downloaded!", f"Saved to: {temp_updater_file}")
+                except Exception as updater_error:
+                    self.update_status("Updater download failed", f"Continuing with main update: {str(updater_error)}")
+                    temp_updater_file = None
+            else:
+                self.update_status("No updater update available", "Updater URL not provided")
+            
             time.sleep(1)
             
             # Step 2: Close main application if running
@@ -113,9 +147,9 @@ class UpdaterApp:
                                  f"Target: {self.app_path}")
                 time.sleep(2)
                 
-                # Step 3: Replace the executable
+                # Step 3: Replace the main executable
                 try:
-                    self.update_status("Installing update...", "Replacing executable...")
+                    self.update_status("Installing main application...", "Replacing executable...")
                     
                     # Create backup
                     backup_path = f"{self.app_path}.backup"
@@ -125,11 +159,47 @@ class UpdaterApp:
                     
                     # Replace with new version
                     shutil.copy2(temp_file, self.app_path)
-                    self.update_status("Update installed successfully!", 
+                    self.update_status("Main application updated!", 
                                      f"Application updated to version {self.new_version}")
                     
                     # Clean up temp file
                     os.remove(temp_file)
+                    
+                    # Step 3.5: Replace updater if available
+                    if temp_updater_file and os.path.exists(temp_updater_file):
+                        try:
+                            self.update_status("Installing updater update...", "Replacing updater.exe...")
+                            
+                            # Get current updater path
+                            current_updater_path = os.path.join(os.path.dirname(self.app_path), "updater.exe")
+                            
+                            # Create backup of current updater
+                            if os.path.exists(current_updater_path):
+                                updater_backup = f"{current_updater_path}.backup"
+                                shutil.copy2(current_updater_path, updater_backup)
+                                self.update_status("Updater backup created", f"Backup: {updater_backup}")
+                            
+                            # We can't replace ourselves while running, so we'll use a clever workaround
+                            # Create a batch script that will replace the updater after this process exits
+                            batch_script = os.path.join(os.path.dirname(self.app_path), "update_updater.bat")
+                            
+                            with open(batch_script, 'w') as bat:
+                                bat.write('@echo off\n')
+                                bat.write('timeout /t 2 /nobreak >nul\n')
+                                bat.write(f'copy /Y "{temp_updater_file}" "{current_updater_path}"\n')
+                                bat.write(f'del "{temp_updater_file}"\n')
+                                bat.write(f'del "%~f0"\n')  # Delete the batch file itself
+                            
+                            self.update_status("Updater will be updated after restart", 
+                                             f"Script created: {batch_script}")
+                            
+                            # Launch the batch script in background
+                            subprocess.Popen(['cmd', '/c', batch_script], 
+                                           creationflags=subprocess.CREATE_NO_WINDOW)
+                            
+                        except Exception as updater_error:
+                            self.update_status("Updater update failed", 
+                                             f"Main app updated successfully. Updater error: {str(updater_error)}")
                     
                     # Step 4: Relaunch application
                     time.sleep(2)

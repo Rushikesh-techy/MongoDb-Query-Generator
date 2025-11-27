@@ -536,7 +536,7 @@ This software is proprietary and confidential. Unauthorized copying, distributio
 
 <div align="center">
 
-**Made with ❤️ by Rushikesh Patil**
+**Made by Rushikesh Patil**
 
 [⬆ Back to Top](#mongodb-query-generator)
 
