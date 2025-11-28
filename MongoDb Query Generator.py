@@ -20,14 +20,15 @@ class MongoDBQueryGenerator:
         self.root = root
         self.root.title(f"{APP_NAME}")
         
-        # Start maximized
+        # Set window size and allow maximizing
+        self.root.geometry("1920x1080")  # Increased from 1100x700
         self.root.state('zoomed')
-        self.root.minsize(1100, 700)
+        self.root.minsize(1920, 1080)  # Increased minimum size
         
         # Initialize variables
         self.schema_fields = []
         self.field_values = {}  # Store unique values per field from JSON
-        self.query_conditions = []
+        self.query_conditions = []  # Each condition includes its group operator
         self.generated_query = None
         self.imported_data = None  # Store imported JSON data
         
@@ -48,7 +49,10 @@ class MongoDBQueryGenerator:
         self.create_menu_bar()
         
         # Row 0: Database Name and Collection Name
-        tk.Label(root, text="Database:", font=("Arial", 10, "bold")).grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        db_label_frame = tk.Frame(root)
+        db_label_frame.grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        tk.Label(db_label_frame, text="Database:", font=("Arial", 10, "bold")).pack(side=tk.LEFT)
+        tk.Label(db_label_frame, text="*", font=("Arial", 12, "bold"), fg="red").pack(side=tk.LEFT)
         
         db_coll_frame = tk.Frame(root)
         db_coll_frame.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
@@ -56,7 +60,11 @@ class MongoDBQueryGenerator:
         self.db_name = tk.Entry(db_coll_frame, width=25)
         self.db_name.pack(side=tk.LEFT, padx=(0, 10))
         
-        tk.Label(db_coll_frame, text="Collection:", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=(30, 5))
+        coll_label_frame = tk.Frame(db_coll_frame)
+        coll_label_frame.pack(side=tk.LEFT, padx=(30, 5))
+        tk.Label(coll_label_frame, text="Collection:", font=("Arial", 10, "bold")).pack(side=tk.LEFT)
+        tk.Label(coll_label_frame, text="*", font=("Arial", 12, "bold"), fg="red").pack(side=tk.LEFT)
+        
         self.collection_name = tk.Entry(db_coll_frame, width=25)
         self.collection_name.pack(side=tk.LEFT)
         
@@ -92,13 +100,13 @@ class MongoDBQueryGenerator:
         self.builder_frame = tk.Frame(root, relief=tk.RIDGE, bd=2)
         self.builder_frame.grid(row=2, column=1, padx=10, pady=5, sticky="nsew", rowspan=2)
         
-        # Query builder controls - Row 1
+        # Query builder controls - Row 1 (Field only)
         controls_frame = tk.Frame(self.builder_frame)
         controls_frame.pack(fill=tk.X, padx=5, pady=5)
         
         tk.Label(controls_frame, text="Field:", font=("Arial", 9)).pack(side=tk.LEFT, padx=2)
-        self.field_combo = ttk.Combobox(controls_frame, width=35, state="readonly")
-        self.field_combo.pack(side=tk.LEFT, padx=2)
+        self.field_combo = ttk.Combobox(controls_frame, width=80, state="readonly")
+        self.field_combo.pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
         
         # Create tooltip for field combo to show full path
         self.field_tooltip = None
@@ -125,40 +133,56 @@ class MongoDBQueryGenerator:
         self.field_combo.bind("<Enter>", show_field_tooltip)
         self.field_combo.bind("<Leave>", hide_field_tooltip)
         
-        tk.Label(controls_frame, text="Operator:", font=("Arial", 9)).pack(side=tk.LEFT, padx=2)
+        # Query builder controls - Row 2 (Operator, Value, and all buttons)
+        controls_frame1_5 = tk.Frame(self.builder_frame)
+        controls_frame1_5.pack(fill=tk.X, padx=5, pady=(0, 5))
+        
+        tk.Label(controls_frame1_5, text="Operator:", font=("Arial", 9)).pack(side=tk.LEFT, padx=2)
         all_operators = []
         for ops in self.field_operators.values():
             all_operators.extend(ops)
-        self.operator_combo = ttk.Combobox(controls_frame, width=12, values=all_operators, state="readonly")
+        self.operator_combo = ttk.Combobox(controls_frame1_5, width=12, values=all_operators, state="readonly")
         self.operator_combo.pack(side=tk.LEFT, padx=2)
         self.operator_combo.current(0)
         
-        tk.Label(controls_frame, text="Value:", font=("Arial", 9)).pack(side=tk.LEFT, padx=2)
-        self.value_combo = ttk.Combobox(controls_frame, width=20)
+        tk.Label(controls_frame1_5, text="Value:", font=("Arial", 9)).pack(side=tk.LEFT, padx=2)
+        self.value_combo = ttk.Combobox(controls_frame1_5, width=20)
         self.value_combo.pack(side=tk.LEFT, padx=2)
         
         # Button to open value selector for multi-select
-        self.select_values_btn = tk.Button(controls_frame, text="📋 Select Values", command=self.open_value_selector,
+        self.select_values_btn = tk.Button(controls_frame1_5, text="📋 Select Values", command=self.open_value_selector,
                                           bg="#2196F3", fg="white", font=("Arial", 8, "bold"))
         self.select_values_btn.pack(side=tk.LEFT, padx=2)
         
-        tk.Button(controls_frame, text="+ Add", command=self.add_condition,
+        # Group number for explicit grouping
+        tk.Label(controls_frame1_5, text="Group #:", font=("Arial", 9)).pack(side=tk.LEFT, padx=(15, 2))
+        self.group_number_combo = ttk.Combobox(controls_frame1_5, width=5, values=["1", "2", "3", "4", "5"], state="readonly")
+        self.group_number_combo.pack(side=tk.LEFT, padx=2)
+        self.group_number_combo.current(0)  # Default to group 1
+        
+        # Group operator for this condition
+        tk.Label(controls_frame1_5, text="with:", font=("Arial", 9)).pack(side=tk.LEFT, padx=(5, 2))
+        self.condition_group_combo = ttk.Combobox(controls_frame1_5, width=8, values=["None", "$and", "$or", "$nor"], state="readonly")
+        self.condition_group_combo.pack(side=tk.LEFT, padx=2)
+        self.condition_group_combo.current(0)  # Default to None
+        
+        tk.Button(controls_frame1_5, text="+ Add", command=self.add_condition,
                  bg="#4CAF50", fg="white", font=("Arial", 8, "bold"), width=8).pack(side=tk.LEFT, padx=5)
-        tk.Button(controls_frame, text="Clear", command=self.clear_conditions,
-                 bg="#f44336", fg="white", font=("Arial", 8, "bold"), width=8).pack(side=tk.LEFT, padx=2)
+        tk.Button(controls_frame1_5, text="Clear All", command=self.clear_conditions,
+                 bg="#f44336", fg="white", font=("Arial", 8, "bold"), width=10).pack(side=tk.LEFT, padx=2)
+        tk.Button(controls_frame1_5, text="👁 View Query", command=self.view_generated_query,
+                 bg="#FF9800", fg="white", font=("Arial", 8, "bold"), width=12).pack(side=tk.LEFT, padx=2)
         
         # Bind field and operator changes to update value suggestions
         self.field_combo.bind('<<ComboboxSelected>>', self.update_value_suggestions)
         self.operator_combo.bind('<<ComboboxSelected>>', self.update_value_suggestions)
         
-        # Query builder controls - Row 2 (Logical operator)
+        # Query builder controls - Row 3 (Info text)
         controls_frame2 = tk.Frame(self.builder_frame)
         controls_frame2.pack(fill=tk.X, padx=5, pady=(0, 5))
         
-        tk.Label(controls_frame2, text="Combine all conditions with:", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=2)
-        self.logical_combo = ttk.Combobox(controls_frame2, width=15, values=["None (direct)"] + self.logical_operators, state="readonly")
-        self.logical_combo.pack(side=tk.LEFT, padx=2)
-        self.logical_combo.current(0)
+        tk.Label(controls_frame2, text="ℹ️ Use 'None' for ungrouped conditions. Same Group # with same operator will be grouped together. Different groups appear at top level.", 
+                font=("Arial", 8), fg="#666", wraplength=900, justify=tk.LEFT).pack(side=tk.LEFT, padx=2)
         
         tk.Label(controls_frame2, text="  ℹ️ Logical operators wrap all conditions in an array", 
                 font=("Arial", 8), fg="gray").pack(side=tk.LEFT, padx=5)
@@ -448,7 +472,7 @@ class MongoDBQueryGenerator:
         # Create dialog window
         dialog = tk.Toplevel(self.root)
         dialog.title(f"Select Values for {field}")
-        dialog.geometry("500x400")
+        dialog.geometry("800x600")
         dialog.transient(self.root)
         dialog.grab_set()
         
@@ -489,6 +513,19 @@ class MongoDBQueryGenerator:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
+        # Enable mouse wheel scrolling
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
+        
+        # Unbind when dialog closes
+        def on_close():
+            canvas.unbind_all("<MouseWheel>")
+            dialog.destroy()
+        
+        dialog.protocol("WM_DELETE_WINDOW", on_close)
+        
         # Create checkboxes for each value
         check_vars = []
         for value in available_values:
@@ -525,11 +562,11 @@ class MongoDBQueryGenerator:
                     formatted = ', '.join(selected)
             
             self.value_combo.set(formatted)
-            dialog.destroy()
+            on_close()
         
         tk.Button(footer_frame, text="OK", command=apply_selection, 
                  bg="#4CAF50", fg="white", font=("Arial", 9, "bold"), width=10).pack(side=tk.RIGHT, padx=5)
-        tk.Button(footer_frame, text="Cancel", command=dialog.destroy,
+        tk.Button(footer_frame, text="Cancel", command=on_close,
                  font=("Arial", 9), width=10).pack(side=tk.RIGHT)
     
     def add_condition(self):
@@ -537,6 +574,8 @@ class MongoDBQueryGenerator:
         field = self.field_combo.get()
         operator = self.operator_combo.get()
         value = self.value_combo.get().strip()
+        group_num = self.group_number_combo.get()
+        group_op = self.condition_group_combo.get()
         
         if not field:
             messagebox.showwarning("Missing Field", "Please select a field.")
@@ -550,11 +589,13 @@ class MongoDBQueryGenerator:
             messagebox.showwarning("Missing Value", "Please enter a value.")
             return
         
-        # Create condition object
+        # Create condition object with group number and operator
         condition = {
             'field': field,
             'operator': operator,
-            'value': value
+            'value': value,
+            'group_num': group_num,
+            'group_op': group_op
         }
         
         self.query_conditions.append(condition)
@@ -580,6 +621,56 @@ class MongoDBQueryGenerator:
         self.query_text.delete("1.0", tk.END)
         self.query_text.insert(tk.END, '// Use Query Builder above or write manual query here\n{}')
     
+    def view_generated_query(self):
+        """Show the generated query in a popup window"""
+        if not self.query_conditions:
+            messagebox.showinfo("No Conditions", "Please add at least one condition to generate a query.")
+            return
+        
+        # Build the query (this updates self.query_text internally)
+        self.build_query_from_conditions()
+        
+        # Get the generated query text
+        query_text = self.query_text.get("1.0", tk.END).strip()
+        
+        # Create popup window
+        view_window = tk.Toplevel(self.root)
+        view_window.title("Generated Query")
+        view_window.geometry("800x600")
+        view_window.transient(self.root)
+        
+        # Header
+        header_frame = tk.Frame(view_window, bg="#2196F3", pady=10)
+        header_frame.pack(fill=tk.X)
+        tk.Label(header_frame, text="🔍 Generated MongoDB Query", 
+                font=("Arial", 12, "bold"), bg="#2196F3", fg="white").pack()
+        
+        # Query display
+        query_frame = tk.Frame(view_window, padx=10, pady=10)
+        query_frame.pack(fill=tk.BOTH, expand=True)
+        
+        query_display = scrolledtext.ScrolledText(query_frame, font=("Consolas", 10), 
+                                                  wrap=tk.WORD, bg="#f5f5f5")
+        query_display.pack(fill=tk.BOTH, expand=True)
+        query_display.insert(tk.END, query_text)
+        query_display.config(state=tk.DISABLED)
+        
+        # Footer with buttons
+        footer_frame = tk.Frame(view_window, pady=10)
+        footer_frame.pack(fill=tk.X)
+        
+        tk.Button(footer_frame, text="📋 Copy to Clipboard", 
+                 command=lambda: self.copy_to_clipboard_from_view(query_text, view_window),
+                 bg="#4CAF50", fg="white", font=("Arial", 9, "bold"), width=20).pack(side=tk.LEFT, padx=10)
+        tk.Button(footer_frame, text="Close", command=view_window.destroy,
+                 font=("Arial", 9), width=15).pack(side=tk.RIGHT, padx=10)
+    
+    def copy_to_clipboard_from_view(self, text, window):
+        """Copy text to clipboard and show confirmation"""
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        messagebox.showinfo("Copied", "Query copied to clipboard!", parent=window)
+    
     def update_conditions_display(self):
         """Update the display of active conditions"""
         # Clear existing widgets
@@ -591,75 +682,138 @@ class MongoDBQueryGenerator:
                     font=("Arial", 9), fg="gray").pack(pady=10)
             return
         
-        # Display each condition
+        # Display each condition with group number and operator indicator
         for i, condition in enumerate(self.query_conditions):
-            cond_frame = tk.Frame(self.conditions_frame, relief=tk.RAISED, bd=1, bg="#f0f0f0")
+            # Choose color based on group operator
+            group_op = condition.get('group_op', 'None')
+            group_num = condition.get('group_num', '1')
+            
+            if group_op == 'None':
+                bg_color = "#E0E0E0"  # Gray for ungrouped
+            elif group_op == '$or':
+                bg_color = "#FFF9C4"  # Light yellow for OR
+            elif group_op == '$nor':
+                bg_color = "#FFCDD2"  # Light red for NOR
+            else:
+                bg_color = "#C8E6C9"  # Light green for AND
+            
+            cond_frame = tk.Frame(self.conditions_frame, relief=tk.RAISED, bd=1, bg=bg_color)
             cond_frame.pack(fill=tk.X, padx=2, pady=2)
             
+            # Show group number badge
+            tk.Label(cond_frame, text=f"#{group_num}", font=("Arial", 8, "bold"), 
+                    bg="#555", fg="white", width=4, relief=tk.RAISED).pack(side=tk.LEFT, padx=2)
+            
+            # Show group operator badge
+            tk.Label(cond_frame, text=group_op, font=("Arial", 8, "bold"), 
+                    bg=bg_color, fg="#333", width=6).pack(side=tk.LEFT, padx=2)
+            
+            # Show condition
             cond_text = f"{condition['field']} {condition['operator']} {condition['value']}"
             tk.Label(cond_frame, text=cond_text, font=("Consolas", 9), 
-                    bg="#f0f0f0", anchor="w").pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+                    bg=bg_color, anchor="w").pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
             
+            # Remove button
             tk.Button(cond_frame, text="✖", command=lambda idx=i: self.remove_condition(idx),
                      bg="#f44336", fg="white", font=("Arial", 8, "bold"),
                      width=3).pack(side=tk.RIGHT, padx=2)
     
     def build_query_from_conditions(self):
-        """Build MongoDB query from conditions"""
+        """Build MongoDB query from conditions with explicit group numbers"""
         if not self.query_conditions:
             return
         
-        # Get selected logical operator
-        logical_op = self.logical_combo.get()
-        if logical_op == "None (direct)":
-            logical_op = None
-        
-        # Build individual condition objects
-        condition_objs = []
+        # Organize conditions by group number
+        groups_dict = {}
+        ungrouped_conditions = []  # Store conditions with 'None' operator
         
         for condition in self.query_conditions:
+            group_num = condition.get('group_num', '1')
+            group_op = condition.get('group_op', 'None')
+            
+            # Parse and build condition object first
             field = condition['field']
             operator = condition['operator']
             value = condition['value']
-            
-            # Parse value (try to convert to appropriate type)
             parsed_value = self.parse_value(value, operator)
             
-            # Build single condition
             cond_obj = {}
             if operator == '$eq':
-                # Simple equality
                 cond_obj[field] = parsed_value
             elif operator in ['$in', '$nin', '$all']:
-                # Array operators
                 if not isinstance(parsed_value, list):
                     parsed_value = [parsed_value]
                 cond_obj[field] = {operator: parsed_value}
             elif operator == '$exists':
-                # Boolean operators
                 cond_obj[field] = {operator: parsed_value.lower() == 'true'}
             elif operator == '$regex':
-                # Regex operator
                 cond_obj[field] = {operator: parsed_value}
             else:
-                # Other operators
                 cond_obj[field] = {operator: parsed_value}
             
-            condition_objs.append(cond_obj)
+            # Add to appropriate collection
+            if group_op == 'None':
+                ungrouped_conditions.append(cond_obj)
+            else:
+                if group_num not in groups_dict:
+                    groups_dict[group_num] = {
+                        'operator': group_op,
+                        'conditions': []
+                    }
+                groups_dict[group_num]['conditions'].append(cond_obj)
         
-        # Combine conditions based on logical operator
-        if logical_op and logical_op in self.logical_operators:
-            # Use logical operator to combine all conditions
-            query = {logical_op: condition_objs}
-        elif len(condition_objs) == 1:
-            # Single condition - use directly
-            query = condition_objs[0]
-        else:
-            # Multiple conditions without logical operator - merge into single object
-            # This will overwrite if same field used multiple times
+        # Build query from groups
+        if len(groups_dict) == 0 and len(ungrouped_conditions) == 0:
             query = {}
-            for cond in condition_objs:
+        elif len(groups_dict) == 0 and len(ungrouped_conditions) > 0:
+            # Only ungrouped conditions - merge them
+            query = {}
+            for cond in ungrouped_conditions:
                 query.update(cond)
+        elif len(groups_dict) == 1 and len(ungrouped_conditions) == 0:
+            # Single group, no ungrouped
+            group_num = list(groups_dict.keys())[0]
+            group = groups_dict[group_num]
+            
+            if len(group['conditions']) == 1:
+                query = group['conditions'][0]
+            else:
+                query = {group['operator']: group['conditions']}
+        else:
+            # Multiple groups or mix of grouped and ungrouped - combine them at top level
+            result = {}
+            
+            for group_num in sorted(groups_dict.keys()):
+                group = groups_dict[group_num]
+                group_op = group['operator']
+                
+                # Build this group
+                if len(group['conditions']) == 1:
+                    group_query = group['conditions'][0]
+                else:
+                    group_query = {group_op: group['conditions']}
+                
+                # Add to result
+                if group_op not in result:
+                    result[group_op] = []
+                
+                # If it's already wrapped in the same operator, unwrap it
+                if isinstance(group_query, dict) and group_op in group_query:
+                    result[group_op].extend(group_query[group_op])
+                else:
+                    result[group_op].append(group_query)
+            
+            # Add ungrouped conditions directly to result
+            for cond in ungrouped_conditions:
+                result.update(cond)
+            
+            # If only one operator type at top level, use it directly
+            if len(result) == 1 and list(result.keys())[0] in ['$and', '$or', '$nor']:
+                op = list(result.keys())[0]
+                query = {op: result[op]}
+            else:
+                # Multiple operators at top level or mix - keep them separate
+                query = result
         
         # Format and display query
         query_str = json.dumps(query, indent=4)
