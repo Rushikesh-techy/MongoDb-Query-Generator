@@ -36,6 +36,7 @@ class UpdaterApp:
             self.new_version = sys.argv[2] if len(sys.argv) > 2 else "Unknown"
             self.app_path = sys.argv[3] if len(sys.argv) > 3 else None
             self.updater_url = sys.argv[4] if len(sys.argv) > 4 else None  # New updater URL
+            self.changelog_url = sys.argv[5] if len(sys.argv) > 5 else None  # Changelog URL
         else:
             messagebox.showerror("Error", "Invalid updater launch. Missing parameters.")
             self.root.destroy()
@@ -108,6 +109,30 @@ class UpdaterApp:
             self.update_status("Main application downloaded!", f"Saved to: {temp_file}")
             time.sleep(1)
             
+            # Step 1.3: Download changelog if URL provided
+            temp_changelog_file = None
+            
+            if self.changelog_url:
+                try:
+                    self.update_status("Downloading changelog...", f"URL: {self.changelog_url}")
+                    
+                    changelog_response = requests.get(self.changelog_url)
+                    changelog_response.raise_for_status()
+                    
+                    temp_changelog_file = Path(os.path.expanduser("~")) / "Downloads" / "CHANGELOG_update.txt"
+                    
+                    with open(temp_changelog_file, 'wb') as f:
+                        f.write(changelog_response.content)
+                    
+                    self.update_status("Changelog downloaded!", f"Saved to: {temp_changelog_file}")
+                except Exception as changelog_error:
+                    self.update_status("Changelog download failed", f"Continuing with update: {str(changelog_error)}")
+                    temp_changelog_file = None
+            else:
+                self.update_status("No changelog update available", "Changelog URL not provided")
+            
+            time.sleep(1)
+            
             # Step 1.5: Check if updater.exe URL was provided
             temp_updater_file = None
             
@@ -151,8 +176,19 @@ class UpdaterApp:
                 try:
                     self.update_status("Installing main application...", "Replacing executable...")
                     
+                    # Create hidden backup folder
+                    app_dir = os.path.dirname(self.app_path)
+                    backup_dir = os.path.join(app_dir, ".backups")
+                    if not os.path.exists(backup_dir):
+                        os.makedirs(backup_dir)
+                        # Hide the folder on Windows
+                        if os.name == 'nt':
+                            import ctypes
+                            ctypes.windll.kernel32.SetFileAttributesW(backup_dir, 0x02)  # FILE_ATTRIBUTE_HIDDEN
+                    
                     # Create backup
-                    backup_path = f"{self.app_path}.backup"
+                    backup_filename = f"MongoDBQueryGenerator_{self.new_version}.backup"
+                    backup_path = os.path.join(backup_dir, backup_filename)
                     if os.path.exists(self.app_path):
                         shutil.copy2(self.app_path, backup_path)
                         self.update_status("Backup created", f"Backup: {backup_path}")
@@ -165,6 +201,28 @@ class UpdaterApp:
                     # Clean up temp file
                     os.remove(temp_file)
                     
+                    # Step 3.3: Install changelog if available
+                    if temp_changelog_file and os.path.exists(temp_changelog_file):
+                        try:
+                            self.update_status("Installing changelog...", "Copying CHANGELOG.txt...")
+                            
+                            changelog_dest = os.path.join(os.path.dirname(self.app_path), "CHANGELOG.txt")
+                            
+                            # Backup existing changelog if present
+                            if os.path.exists(changelog_dest):
+                                changelog_backup = os.path.join(backup_dir, f"CHANGELOG_{self.new_version}.backup")
+                                shutil.copy2(changelog_dest, changelog_backup)
+                            
+                            # Copy new changelog
+                            shutil.copy2(temp_changelog_file, changelog_dest)
+                            self.update_status("Changelog updated!", f"Installed to: {changelog_dest}")
+                            
+                            # Clean up temp file
+                            os.remove(temp_changelog_file)
+                        except Exception as changelog_error:
+                            self.update_status("Changelog installation failed", 
+                                             f"Main app updated successfully. Changelog error: {str(changelog_error)}")
+                    
                     # Step 3.5: Replace updater if available
                     if temp_updater_file and os.path.exists(temp_updater_file):
                         try:
@@ -175,7 +233,7 @@ class UpdaterApp:
                             
                             # Create backup of current updater
                             if os.path.exists(current_updater_path):
-                                updater_backup = f"{current_updater_path}.backup"
+                                updater_backup = os.path.join(backup_dir, f"updater_{self.new_version}.backup")
                                 shutil.copy2(current_updater_path, updater_backup)
                                 self.update_status("Updater backup created", f"Backup: {updater_backup}")
                             
@@ -214,7 +272,7 @@ class UpdaterApp:
                 except Exception as e:
                     self.update_status("Error during installation", f"Error: {str(e)}")
                     # Restore backup if exists
-                    if os.path.exists(backup_path):
+                    if 'backup_path' in locals() and os.path.exists(backup_path):
                         shutil.copy2(backup_path, self.app_path)
                         self.update_status("Backup restored", "Application restored to previous version")
                     messagebox.showerror("Update Failed", 
