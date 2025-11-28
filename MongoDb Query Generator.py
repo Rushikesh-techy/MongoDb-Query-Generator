@@ -920,15 +920,18 @@ class MongoDBQueryGenerator:
                     elif 'alpha' in release_name.lower() or 'α' in release_name.lower():
                         latest_channel = "Alpha"
                 
-                # Find the .exe assets
+                # Find the .exe assets and changelog
                 download_url = None
                 updater_url = None
+                changelog_url = None
                 
                 for asset in release_data.get('assets', []):
                     if asset['name'].lower() == 'mongodbquerygenerator.exe':
                         download_url = asset['browser_download_url']
                     elif asset['name'].lower() == 'updater.exe':
                         updater_url = asset['browser_download_url']
+                    elif asset['name'].lower() == 'changelog.txt':
+                        changelog_url = asset['browser_download_url']
                 
                 # Compare versions
                 if self.compare_versions(latest_version, APP_VERSION) > 0:
@@ -947,7 +950,7 @@ Note: The application will close and updater will handle the installation."""
                     if download_url:
                         result = messagebox.askyesno("Update Available", update_msg)
                         if result:
-                            self.launch_updater(download_url, latest_version, updater_url)
+                            self.launch_updater(download_url, latest_version, updater_url, changelog_url)
                     else:
                         messagebox.showinfo("Update Available", 
                             f"{update_msg}\n\nPlease visit GitHub to download manually:\n"
@@ -993,7 +996,7 @@ Note: The application will close and updater will handle the installation."""
         except:
             return 0
     
-    def launch_updater(self, download_url, new_version, updater_url=None):
+    def launch_updater(self, download_url, new_version, updater_url=None, changelog_url=None):
         """Launch the updater application to download and install update"""
         def launch_and_close():
             try:
@@ -1017,16 +1020,21 @@ Note: The application will close and updater will handle the installation."""
                         f"https://github.com/{GITHUB_REPO}/releases/latest"))
                     return
                 
-                # Launch updater with parameters (pass updater_url as 4th parameter)
+                # Launch updater with parameters (pass updater_url as 4th parameter, changelog_url as 5th)
                 if updater_path.endswith('.exe'):
-                    if updater_url:
+                    if changelog_url:
+                        subprocess.Popen([updater_path, download_url, new_version, app_path, updater_url or "", changelog_url],
+                                       creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+                    elif updater_url:
                         subprocess.Popen([updater_path, download_url, new_version, app_path, updater_url],
                                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
                     else:
                         subprocess.Popen([updater_path, download_url, new_version, app_path],
                                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
                 else:
-                    if updater_url:
+                    if changelog_url:
+                        subprocess.Popen([sys.executable, updater_path, download_url, new_version, app_path, updater_url or "", changelog_url])
+                    elif updater_url:
                         subprocess.Popen([sys.executable, updater_path, download_url, new_version, app_path, updater_url])
                     else:
                         subprocess.Popen([sys.executable, updater_path, download_url, new_version, app_path])
@@ -1045,28 +1053,109 @@ Note: The application will close and updater will handle the installation."""
     
     def show_about(self):
         """Show about dialog with version information"""
-        about_text = f"""
-{APP_NAME}
-Version: {APP_VERSION}
-Channel: {APP_CHANNEL}
-
-A simple yet powerful tool to generate MongoDB JavaScript queries.
-
-Features:
-• Support for updateMany, updateOne, find operations
-• Support for insertOne, insertMany operations
-• Support for deleteMany, deleteOne operations
-• Copy to clipboard functionality
-• Save queries as .js files
-• JavaScript syntax with MongoDB shell format
-
-Developer: Rushikesh Patil
-Repository: github.com/Rushikesh-techy/MongoDb-Query-Generator
-
-© 2025 All Rights Reserved
-        """
+        # Create custom dialog window
+        about_window = tk.Toplevel(self.root)
+        about_window.title("About this Version")
+        about_window.geometry("650x600")
+        about_window.transient(self.root)
+        about_window.resizable(False, False)
         
-        messagebox.showinfo("About this Version", about_text)
+        # Header
+        header_frame = tk.Frame(about_window, bg="#2196F3", pady=15)
+        header_frame.pack(fill=tk.X)
+        
+        tk.Label(header_frame, text=APP_NAME, 
+                font=("Arial", 16, "bold"), bg="#2196F3", fg="white").pack()
+        tk.Label(header_frame, text=f"Version {APP_VERSION} ({APP_CHANNEL})", 
+                font=("Arial", 10), bg="#2196F3", fg="white").pack()
+        
+        # Content frame
+        content_frame = tk.Frame(about_window, padx=20, pady=15)
+        content_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Description
+        tk.Label(content_frame, 
+                text="A simple yet powerful tool to generate MongoDB JavaScript queries.",
+                font=("Arial", 10), wraplength=600, justify=tk.CENTER).pack(pady=10)
+        
+        # Separator
+        tk.Frame(content_frame, height=2, bg="#e0e0e0").pack(fill=tk.X, pady=10)
+        
+        # Latest Features
+        features_text = """Latest Features (v0.4):
+• Visual Query Builder with dropdown selections
+• JSON Schema Import to extract fields and values
+• Smart value suggestions from imported data
+• Multi-select value picker with checkboxes
+• Flexible grouping system with logical operators
+• Color-coded condition display
+• View Query button for quick preview
+• Query mode toggle (Builder vs Manual)
+• Mouse wheel scrolling in dialogs
+• Support for 18 MongoDB operators"""
+        
+        tk.Label(content_frame, text=features_text, 
+                font=("Arial", 9), justify=tk.LEFT, anchor="w").pack(fill=tk.X, pady=10)
+        
+        # Separator
+        tk.Frame(content_frame, height=2, bg="#e0e0e0").pack(fill=tk.X, pady=10)
+        
+        # Changelog link
+        changelog_frame = tk.Frame(content_frame)
+        changelog_frame.pack(pady=10)
+        
+        tk.Label(changelog_frame, text="📄 ", font=("Arial", 12)).pack(side=tk.LEFT)
+        changelog_link = tk.Label(changelog_frame, text="View Full Changelog", 
+                                 font=("Arial", 10, "underline"), fg="#2196F3", cursor="hand2")
+        changelog_link.pack(side=tk.LEFT)
+        changelog_link.bind("<Button-1>", lambda e: self.open_changelog())
+        
+        # Separator
+        tk.Frame(content_frame, height=2, bg="#e0e0e0").pack(fill=tk.X, pady=10)
+        
+        # Developer info
+        tk.Label(content_frame, text="Developer: Rushikesh Patil", 
+                font=("Arial", 9, "bold")).pack(pady=5)
+        
+        repo_link = tk.Label(content_frame, 
+                           text="github.com/Rushikesh-techy/MongoDb-Query-Generator",
+                           font=("Arial", 9, "underline"), fg="#2196F3", cursor="hand2")
+        repo_link.pack()
+        repo_link.bind("<Button-1>", 
+                      lambda e: webbrowser.open("https://github.com/Rushikesh-techy/MongoDb-Query-Generator"))
+        
+        # Copyright
+        tk.Label(content_frame, text="© 2025 All Rights Reserved", 
+                font=("Arial", 8), fg="gray").pack(pady=10)
+        
+        # Close button
+        tk.Button(about_window, text="Close", command=about_window.destroy,
+                 font=("Arial", 10), width=15).pack(pady=10)
+    
+    def open_changelog(self):
+        """Open the changelog file"""
+        import os
+        import subprocess
+        
+        # Get the directory where the script is located
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable
+            app_dir = os.path.dirname(sys.executable)
+        else:
+            # Running as script
+            app_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        changelog_path = os.path.join(app_dir, "CHANGELOG.txt")
+        
+        if os.path.exists(changelog_path):
+            try:
+                # Open with default text editor
+                os.startfile(changelog_path)
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not open changelog file:\n{e}")
+        else:
+            messagebox.showwarning("File Not Found", 
+                                 "CHANGELOG.txt file not found in the application directory.")
             
     def generate_query(self):
         try:

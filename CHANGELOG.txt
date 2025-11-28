@@ -1,0 +1,89 @@
+MongoDB Query Generator - Changelog
+=====================================
+
+Version 0.4 (Beta) - November 28, 2025
+--------------------------------------
+NEW FEATURES:
+✨ Visual Query Builder with dropdown selections
+✨ JSON Schema Import to extract fields and values from sample data
+✨ Smart value suggestions from imported JSON documents
+✨ Multi-select value picker with checkboxes
+✨ Flexible grouping system with Group # (1-5) and logical operators
+✨ Color-coded condition display:
+   - Gray: Ungrouped conditions (None)
+   - Green: AND conditions ($and)
+   - Yellow: OR conditions ($or)
+   - Red: NOR conditions ($nor)
+✨ View Query button for quick preview in popup window
+✨ Query mode toggle: Builder vs Manual entry
+✨ Mouse wheel scrolling in Select Values window
+✨ Clickable changelog link in About window to view full version history
+✨ Support for 18 MongoDB operators across 5 categories:
+   - Comparison: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin
+   - Logical: $and, $or, $nor
+   - Element: $exists, $type
+   - Array: $all, $elemMatch, $size
+   - Regex: $regex
+
+IMPROVEMENTS:
+🔧 UI reorganized: Database and Collection on same row
+🔧 Query builder controls split across two rows for better organization
+🔧 Window size increased to 1920x1080 (maximized)
+🔧 Required field indicators (red asterisk) for Database and Collection
+🔧 Field dropdown with dynamic width and tooltip for long field names
+🔧 JSON import handles UTF-8 BOM encoding
+🔧 Support for MongoDB extended JSON types ($date, $numberLong, etc.)
+🔧 Processes first 50 documents for value extraction
+🔧 Limits to 100 unique values per field for performance
+🔧 Enhanced About window with professional layout and clickable links
+🔧 Auto-update system now downloads and installs CHANGELOG.txt automatically
+🔧 Backups saved to hidden .backups folder (keeps main directory clean)
+
+BUG FIXES:
+🐛 Fixed logical operators to use array-based syntax
+🐛 Fixed nested field extraction from complex JSON structures
+🐛 Fixed value suggestions updating based on operator type
+🐛 Fixed import button visibility in Manual mode
+
+---
+
+Version 0.3 (Beta) - Previous Release
+--------------------------------------
+IMPROVEMENTS:
+🔧 Enhanced UI layout and responsiveness
+🔄 Improved auto-update mechanism
+🐛 Bug fixes and performance improvements
+
+---
+
+Version 0.2 (Beta) - Previous Release
+--------------------------------------
+NEW FEATURES:
+🔄 Added auto-update system
+✨ Dual-executable architecture (main app + updater)
+✨ Version channel system (Beta/Stable/Alpha)
+
+---
+
+Version 0.1 (Alpha) - Initial Release
+-------------------------------------
+NEW FEATURES:
+🎉 Basic query generation for 7 MongoDB operations:
+   - updateMany
+   - updateOne
+   - find
+   - insertOne
+   - insertMany
+   - deleteMany
+   - deleteOne
+📋 Copy to clipboard functionality
+💾 Save to .js file feature
+🎨 Simple GUI interface with Tkinter
+
+---
+
+For more information, visit:
+https://github.com/Rushikesh-techy/MongoDb-Query-Generator
+
+Report bugs or request features:
+https://github.com/Rushikesh-techy/MongoDb-Query-Generator/issues
