@@ -7,9 +7,10 @@ import subprocess
 import os
 import sys
 import threading
+import json
 
 # Version Information
-APP_VERSION = "0.3"
+APP_VERSION = "0.4"
 APP_CHANNEL = "Beta"
 APP_NAME = "MongoDB Query Generator"
 GITHUB_REPO = "Rushikesh-techy/MongoDb-Query-Generator"
@@ -21,39 +22,185 @@ class MongoDBQueryGenerator:
         
         # Start maximized
         self.root.state('zoomed')
-        self.root.minsize(900, 650)
+        self.root.minsize(1100, 700)
+        
+        # Initialize variables
+        self.schema_fields = []
+        self.field_values = {}  # Store unique values per field from JSON
+        self.query_conditions = []
+        self.generated_query = None
+        self.imported_data = None  # Store imported JSON data
+        
+        # MongoDB Operators
+        # Separate field-level and query-level operators
+        self.field_operators = {
+            "Comparison": ["$eq", "$ne", "$gt", "$gte", "$lt", "$lte", "$in", "$nin"],
+            "Element": ["$exists", "$type"],
+            "Array": ["$all", "$elemMatch", "$size"],
+            "Regex": ["$regex"]
+        }
+        
+        # Logical operators are query-level (combine multiple conditions)
+        self.logical_operators = ["$and", "$or", "$nor"]
+        self.current_logical_operator = None  # Track which logical operator to use
         
         # Create Menu Bar
         self.create_menu_bar()
         
-        # Database Name
-        tk.Label(root, text="Database Name:", font=("Arial", 10)).grid(row=0, column=0, padx=10, pady=5, sticky="w")
-        self.db_name = tk.Entry(root, width=40)
-        self.db_name.grid(row=0, column=1, padx=10, pady=5)
+        # Row 0: Database Name and Collection Name
+        tk.Label(root, text="Database:", font=("Arial", 10, "bold")).grid(row=0, column=0, padx=10, pady=5, sticky="w")
         
-        # Collection Name
-        tk.Label(root, text="Collection Name:", font=("Arial", 10)).grid(row=1, column=0, padx=10, pady=5, sticky="w")
-        self.collection_name = tk.Entry(root, width=40)
-        self.collection_name.grid(row=1, column=1, padx=10, pady=5)
+        db_coll_frame = tk.Frame(root)
+        db_coll_frame.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
         
-        # Operation Type
-        tk.Label(root, text="Operation Type:", font=("Arial", 10)).grid(row=2, column=0, padx=10, pady=5, sticky="w")
-        self.operation = ttk.Combobox(root, width=37, values=["updateMany", "updateOne", "find", "insertOne", "insertMany", "deleteMany", "deleteOne"])
-        self.operation.grid(row=2, column=1, padx=10, pady=5)
+        self.db_name = tk.Entry(db_coll_frame, width=25)
+        self.db_name.pack(side=tk.LEFT, padx=(0, 10))
+        
+        tk.Label(db_coll_frame, text="Collection:", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=(30, 5))
+        self.collection_name = tk.Entry(db_coll_frame, width=25)
+        self.collection_name.pack(side=tk.LEFT)
+        
+        # Row 1: Operation Type, Query Input Mode, and Import Button
+        tk.Label(root, text="Operation Type:", font=("Arial", 10, "bold")).grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        
+        op_frame = tk.Frame(root)
+        op_frame.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
+        
+        self.operation = ttk.Combobox(op_frame, width=15, values=["updateMany", "updateOne", "find", "insertOne", "insertMany", "deleteMany", "deleteOne"])
+        self.operation.pack(side=tk.LEFT)
         self.operation.current(0)
-        self.operation.bind("<<ComboboxSelected>>", self.on_operation_change)
         
-        # Filter/Query Section
-        tk.Label(root, text="Query/Filter:", font=("Arial", 10)).grid(row=3, column=0, padx=10, pady=5, sticky="nw")
-        self.query_text = scrolledtext.ScrolledText(root, width=60, height=8, font=("Consolas", 9))
-        self.query_text.grid(row=3, column=1, padx=10, pady=5)
-        self.query_text.insert(tk.END, '{\n    Field 1: Value,\n    Field 2: {\n        \'$in\': [\n            "Value-1",\n            "Value-2"\n        ]\n    }\n}')
+        # Query Input Mode Selection (same row)
+        tk.Label(op_frame, text="  Query Mode:", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=(72, 5))
+        
+        self.query_mode = tk.StringVar(value="builder")
+        tk.Radiobutton(op_frame, text="Builder", variable=self.query_mode, value="builder",
+                      font=("Arial", 9), command=self.toggle_query_mode).pack(side=tk.LEFT, padx=2)
+        tk.Radiobutton(op_frame, text="Manual", variable=self.query_mode, value="manual",
+                      font=("Arial", 9), command=self.toggle_query_mode).pack(side=tk.LEFT, padx=2)
+        
+        # Import JSON Button
+        self.import_btn = tk.Button(op_frame, text="📁 Import JSON Schema", command=self.import_json_schema,
+                               bg="#9C27B0", fg="white", font=("Arial", 9, "bold"))
+        self.import_btn.pack(side=tk.RIGHT, padx=(10, 0))
+        
+        # Query Builder Section
+        self.query_builder_label = tk.Label(root, text="Query Builder:", font=("Arial", 10, "bold"))
+        self.query_builder_label.grid(row=2, column=0, padx=10, pady=5, sticky="nw")
+        
+        # Frame for query builder
+        self.builder_frame = tk.Frame(root, relief=tk.RIDGE, bd=2)
+        self.builder_frame.grid(row=2, column=1, padx=10, pady=5, sticky="nsew", rowspan=2)
+        
+        # Query builder controls - Row 1
+        controls_frame = tk.Frame(self.builder_frame)
+        controls_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        tk.Label(controls_frame, text="Field:", font=("Arial", 9)).pack(side=tk.LEFT, padx=2)
+        self.field_combo = ttk.Combobox(controls_frame, width=35, state="readonly")
+        self.field_combo.pack(side=tk.LEFT, padx=2)
+        
+        # Create tooltip for field combo to show full path
+        self.field_tooltip = None
+        def show_field_tooltip(event):
+            if self.field_combo.get():
+                x, y, _, _ = self.field_combo.bbox("insert")
+                x += self.field_combo.winfo_rootx() + 25
+                y += self.field_combo.winfo_rooty() + 25
+                
+                self.field_tooltip = tk.Toplevel(self.field_combo)
+                self.field_tooltip.wm_overrideredirect(True)
+                self.field_tooltip.wm_geometry(f"+{x}+{y}")
+                
+                label = tk.Label(self.field_tooltip, text=self.field_combo.get(), 
+                               background="#ffffe0", relief="solid", borderwidth=1,
+                               font=("Arial", 9))
+                label.pack()
+        
+        def hide_field_tooltip(event):
+            if self.field_tooltip:
+                self.field_tooltip.destroy()
+                self.field_tooltip = None
+        
+        self.field_combo.bind("<Enter>", show_field_tooltip)
+        self.field_combo.bind("<Leave>", hide_field_tooltip)
+        
+        tk.Label(controls_frame, text="Operator:", font=("Arial", 9)).pack(side=tk.LEFT, padx=2)
+        all_operators = []
+        for ops in self.field_operators.values():
+            all_operators.extend(ops)
+        self.operator_combo = ttk.Combobox(controls_frame, width=12, values=all_operators, state="readonly")
+        self.operator_combo.pack(side=tk.LEFT, padx=2)
+        self.operator_combo.current(0)
+        
+        tk.Label(controls_frame, text="Value:", font=("Arial", 9)).pack(side=tk.LEFT, padx=2)
+        self.value_combo = ttk.Combobox(controls_frame, width=20)
+        self.value_combo.pack(side=tk.LEFT, padx=2)
+        
+        # Button to open value selector for multi-select
+        self.select_values_btn = tk.Button(controls_frame, text="📋 Select Values", command=self.open_value_selector,
+                                          bg="#2196F3", fg="white", font=("Arial", 8, "bold"))
+        self.select_values_btn.pack(side=tk.LEFT, padx=2)
+        
+        tk.Button(controls_frame, text="+ Add", command=self.add_condition,
+                 bg="#4CAF50", fg="white", font=("Arial", 8, "bold"), width=8).pack(side=tk.LEFT, padx=5)
+        tk.Button(controls_frame, text="Clear", command=self.clear_conditions,
+                 bg="#f44336", fg="white", font=("Arial", 8, "bold"), width=8).pack(side=tk.LEFT, padx=2)
+        
+        # Bind field and operator changes to update value suggestions
+        self.field_combo.bind('<<ComboboxSelected>>', self.update_value_suggestions)
+        self.operator_combo.bind('<<ComboboxSelected>>', self.update_value_suggestions)
+        
+        # Query builder controls - Row 2 (Logical operator)
+        controls_frame2 = tk.Frame(self.builder_frame)
+        controls_frame2.pack(fill=tk.X, padx=5, pady=(0, 5))
+        
+        tk.Label(controls_frame2, text="Combine all conditions with:", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=2)
+        self.logical_combo = ttk.Combobox(controls_frame2, width=15, values=["None (direct)"] + self.logical_operators, state="readonly")
+        self.logical_combo.pack(side=tk.LEFT, padx=2)
+        self.logical_combo.current(0)
+        
+        tk.Label(controls_frame2, text="  ℹ️ Logical operators wrap all conditions in an array", 
+                font=("Arial", 8), fg="gray").pack(side=tk.LEFT, padx=5)
+        
+        # Conditions list
+        conditions_label = tk.Label(self.builder_frame, text="Active Conditions:", font=("Arial", 9, "bold"))
+        conditions_label.pack(anchor=tk.W, padx=5, pady=(10, 2))
+        
+        # Scrollable frame for conditions
+        conditions_canvas_frame = tk.Frame(self.builder_frame)
+        conditions_canvas_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        self.conditions_canvas = tk.Canvas(conditions_canvas_frame, height=100)
+        conditions_scrollbar = tk.Scrollbar(conditions_canvas_frame, orient="vertical", command=self.conditions_canvas.yview)
+        self.conditions_frame = tk.Frame(self.conditions_canvas)
+        
+        self.conditions_canvas.configure(yscrollcommand=conditions_scrollbar.set)
+        
+        conditions_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.conditions_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        self.conditions_canvas_window = self.conditions_canvas.create_window((0, 0), window=self.conditions_frame, anchor="nw")
+        self.conditions_frame.bind("<Configure>", lambda e: self.conditions_canvas.configure(scrollregion=self.conditions_canvas.bbox("all")))
+        
+        # Manual Query Section (initially hidden)
+        self.manual_label = tk.Label(root, text="Manual Query:", font=("Arial", 10, "bold"))
+        self.manual_label.grid(row=2, column=0, padx=10, pady=5, sticky="nw")
+        self.manual_label.grid_remove()  # Hide initially
+        
+        self.manual_frame = tk.Frame(root, relief=tk.RIDGE, bd=2)
+        self.manual_frame.grid(row=2, column=1, padx=10, pady=5, sticky="nsew", rowspan=2)
+        self.manual_frame.grid_remove()  # Hide initially
+        
+        self.query_text = scrolledtext.ScrolledText(self.manual_frame, width=60, height=10, font=("Consolas", 9))
+        self.query_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.query_text.insert(tk.END, '// Write your MongoDB query here\n{}')
         
         # Update/Set Document
-        tk.Label(root, text="Update Document ($set):", font=("Arial", 10)).grid(row=4, column=0, padx=10, pady=5, sticky="nw")
-        self.document_text = scrolledtext.ScrolledText(root, width=60, height=8, font=("Consolas", 9))
-        self.document_text.grid(row=4, column=1, padx=10, pady=5)
-        self.document_text.insert(tk.END, '{ Field 3: Value, Field 4: Value }')
+        tk.Label(root, text="Update Document ($set):", font=("Arial", 10, "bold")).grid(row=4, column=0, padx=10, pady=5, sticky="nw")
+        self.document_text = scrolledtext.ScrolledText(root, width=60, height=4, font=("Consolas", 9))
+        self.document_text.grid(row=4, column=1, padx=10, pady=5, sticky="nsew")
+        self.document_text.insert(tk.END, '{ Field: Value }')
         
         # Buttons
         button_frame = tk.Frame(root)
@@ -61,12 +208,12 @@ class MongoDBQueryGenerator:
         
         tk.Button(button_frame, text="Generate JS Query", command=self.generate_query, 
                  bg="#4CAF50", fg="white", font=("Arial", 10, "bold"), width=20).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Clear", command=self.clear_fields, 
-                 bg="#f44336", fg="white", font=("Arial", 10, "bold"), width=10).pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Save to .js File", command=self.save_to_file, 
                  bg="#2196F3", fg="white", font=("Arial", 10, "bold"), width=15).pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Copy to Clipboard", command=self.copy_to_clipboard, 
                  bg="#FF9800", fg="white", font=("Arial", 10, "bold"), width=15).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Clear", command=self.clear_fields, 
+                 bg="#f44336", fg="white", font=("Arial", 10, "bold"), width=10).pack(side=tk.LEFT, padx=5)
         
         # Result Display
         tk.Label(root, text="Generated MongoDB JavaScript Query:", font=("Arial", 10, "bold")).grid(row=6, column=0, padx=10, pady=5, sticky="nw")
@@ -76,7 +223,7 @@ class MongoDBQueryGenerator:
         result_frame.grid(row=7, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
         
         # Create Text widget with scrollbars
-        self.result_text = tk.Text(result_frame, height=12, font=("Consolas", 9), wrap=tk.NONE)
+        self.result_text = tk.Text(result_frame, height=8, font=("Consolas", 9), wrap=tk.NONE)
         
         # Vertical scrollbar
         v_scroll = tk.Scrollbar(result_frame, orient=tk.VERTICAL, command=self.result_text.yview)
@@ -94,8 +241,10 @@ class MongoDBQueryGenerator:
         result_frame.grid_rowconfigure(0, weight=1)
         result_frame.grid_columnconfigure(0, weight=1)
         
-        # Configure main window grid weights
-        root.grid_rowconfigure(7, weight=1)
+        # Configure main window grid weights - distribute space properly
+        root.grid_rowconfigure(2, weight=1)  # Query builder/manual gets space
+        root.grid_rowconfigure(4, weight=0)  # Update document fixed size
+        root.grid_rowconfigure(7, weight=2)  # Result display gets more space
         root.grid_columnconfigure(1, weight=1)
         
         # Status Bar / Footer
@@ -109,8 +258,447 @@ class MongoDBQueryGenerator:
         copyright_label = tk.Label(status_bar, text="© 2025 Rushikesh Patil", 
                                   font=("Arial", 9), anchor=tk.E, padx=10)
         copyright_label.pack(side=tk.RIGHT)
+    
+    def toggle_query_mode(self):
+        """Toggle between Query Builder and Manual Query modes"""
+        mode = self.query_mode.get()
         
-        self.generated_query = None
+        if mode == "builder":
+            # Show Query Builder, hide Manual Query
+            self.query_builder_label.grid()
+            self.builder_frame.grid()
+            self.manual_label.grid_remove()
+            self.manual_frame.grid_remove()
+            self.import_btn.pack(side=tk.RIGHT, padx=(10, 0))  # Show import button
+        else:
+            # Show Manual Query, hide Query Builder
+            self.query_builder_label.grid_remove()
+            self.builder_frame.grid_remove()
+            self.manual_label.grid()
+            self.manual_frame.grid()
+            self.import_btn.pack_forget()  # Hide import button
+        
+    def import_json_schema(self):
+        """Import JSON file from MongoDB Compass export to extract schema"""
+        try:
+            filename = filedialog.askopenfilename(
+                title="Select JSON file exported from MongoDB Compass",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+            )
+            
+            if not filename:
+                return
+            
+            # Use utf-8-sig to handle BOM (Byte Order Mark) from MongoDB Compass exports
+            with open(filename, 'r', encoding='utf-8-sig') as f:
+                data = json.load(f)
+            
+            # Store the imported data
+            self.imported_data = data
+            
+            # Extract fields and their values from JSON
+            fields = set()
+            field_values = {}  # Store unique values per field
+            
+            # MongoDB extended JSON type indicators
+            mongo_types = {'$numberLong', '$numberInt', '$numberDouble', '$numberDecimal',
+                          '$date', '$oid', '$binary', '$regex', '$timestamp', '$minKey', '$maxKey'}
+            
+            def unwrap_mongo_type(value):
+                """Unwrap MongoDB extended JSON types to get actual value"""
+                if isinstance(value, dict) and len(value) == 1:
+                    key = list(value.keys())[0]
+                    if key in mongo_types:
+                        return value[key]
+                return value
+            
+            def extract_fields(obj, prefix=""):
+                """Recursively extract all field names and values from JSON object"""
+                if isinstance(obj, dict):
+                    # Skip if this is a MongoDB type wrapper (single key from mongo_types)
+                    if len(obj) == 1 and list(obj.keys())[0] in mongo_types:
+                        return
+                    
+                    for key, value in obj.items():
+                        # Skip MongoDB type keys
+                        if key in mongo_types:
+                            continue
+                            
+                        field_path = f"{prefix}.{key}" if prefix else key
+                        fields.add(field_path)
+                        
+                        # Store field values (unwrap MongoDB types)
+                        unwrapped_value = unwrap_mongo_type(value)
+                        
+                        if not isinstance(unwrapped_value, (dict, list)):
+                            # Store primitive values
+                            if field_path not in field_values:
+                                field_values[field_path] = set()
+                            
+                            # Limit stored values to prevent memory issues
+                            if len(field_values[field_path]) < 100:
+                                field_values[field_path].add(str(unwrapped_value))
+                        
+                        if isinstance(value, (dict, list)):
+                            extract_fields(value, field_path)
+                            
+                elif isinstance(obj, list) and len(obj) > 0:
+                    # For arrays, extract fields from first element
+                    extract_fields(obj[0], prefix)
+            
+            # Handle both single document and array of documents
+            if isinstance(data, list) and len(data) > 0:
+                # MongoDB Compass exports as array - process documents to get all possible fields
+                for doc in data[:50]:  # Process first 50 documents for comprehensive schema
+                    extract_fields(doc)
+            else:
+                extract_fields(data)
+            
+            self.schema_fields = sorted(list(fields))
+            self.field_values = {k: sorted(list(v)) for k, v in field_values.items()}
+            self.field_combo['values'] = self.schema_fields
+            
+            # Auto-adjust combobox width to fit longest field name
+            if self.schema_fields:
+                max_len = max(len(field) for field in self.schema_fields)
+                # Set width to accommodate longest field, with reasonable limits
+                new_width = min(max(max_len, 30), 80)
+                self.field_combo.config(width=new_width)
+                self.field_combo.current(0)
+                messagebox.showinfo("Schema Imported", 
+                    f"Successfully imported {len(self.schema_fields)} fields from JSON!\n\n"
+                    f"Sample fields: {', '.join(self.schema_fields[:5])}{'...' if len(self.schema_fields) > 5 else ''}")
+            else:
+                messagebox.showwarning("No Fields Found", 
+                    "No fields were found in the JSON file.")
+                
+        except json.JSONDecodeError as e:
+            messagebox.showerror("Invalid JSON", 
+                f"The selected file is not a valid JSON file.\n\nError: {str(e)}")
+        except Exception as e:
+            messagebox.showerror("Import Error", 
+                f"Failed to import JSON file:\n{str(e)}")
+    
+    def update_value_suggestions(self, event=None):
+        """Update value suggestions based on selected field and operator"""
+        field = self.field_combo.get()
+        operator = self.operator_combo.get()
+        
+        if not field or not operator:
+            return
+        
+        # Clear current value
+        self.value_combo.set('')
+        
+        # Determine what values to suggest based on operator
+        if operator == '$exists':
+            # Boolean values
+            self.value_combo['values'] = ['true', 'false']
+            self.value_combo.config(state='readonly')
+            self.value_combo.set('true')
+        
+        elif operator == '$type':
+            # MongoDB BSON types
+            types = ['double', 'string', 'object', 'array', 'binData', 'objectId', 
+                    'bool', 'date', 'null', 'regex', 'int', 'timestamp', 'long', 'decimal']
+            self.value_combo['values'] = types
+            self.value_combo.config(state='readonly')
+        
+        elif operator in ['$in', '$nin', '$all']:
+            # Show actual values from imported data for array operators
+            if field in self.field_values and self.field_values[field]:
+                # Format as array hint
+                self.value_combo['values'] = self.field_values[field]
+                self.value_combo.config(state='normal')
+                # Set hint text
+                if self.field_values[field]:
+                    self.value_combo.set(f"[Select values or type array like: [{', '.join(self.field_values[field][:3])}]]")
+            else:
+                self.value_combo['values'] = []
+                self.value_combo.config(state='normal')
+                self.value_combo.set('[value1, value2, ...]')
+        
+        else:
+            # For other operators, show actual values from field if available
+            if field in self.field_values and self.field_values[field]:
+                self.value_combo['values'] = self.field_values[field]
+                self.value_combo.config(state='normal')
+                if len(self.field_values[field]) > 0:
+                    self.value_combo.set(self.field_values[field][0])
+            else:
+                self.value_combo['values'] = []
+                self.value_combo.config(state='normal')
+    
+    def open_value_selector(self):
+        """Open a dialog to select multiple values with checkboxes"""
+        field = self.field_combo.get()
+        operator = self.operator_combo.get()
+        
+        if not field:
+            messagebox.showwarning("No Field Selected", "Please select a field first.")
+            return
+        
+        # Get available values for the field
+        available_values = self.field_values.get(field, [])
+        
+        if not available_values:
+            messagebox.showinfo("No Values", f"No values found for field '{field}' in the imported JSON data.")
+            return
+        
+        # Create dialog window
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"Select Values for {field}")
+        dialog.geometry("500x400")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Header
+        header_frame = tk.Frame(dialog)
+        header_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        tk.Label(header_frame, text=f"Select values for: {field}", 
+                font=("Arial", 10, "bold")).pack(side=tk.LEFT)
+        
+        # Select All / Deselect All buttons
+        btn_frame = tk.Frame(header_frame)
+        btn_frame.pack(side=tk.RIGHT)
+        
+        def select_all():
+            for var in check_vars:
+                var.set(True)
+        
+        def deselect_all():
+            for var in check_vars:
+                var.set(False)
+        
+        tk.Button(btn_frame, text="Select All", command=select_all, 
+                 font=("Arial", 8)).pack(side=tk.LEFT, padx=2)
+        tk.Button(btn_frame, text="Deselect All", command=deselect_all,
+                 font=("Arial", 8)).pack(side=tk.LEFT, padx=2)
+        
+        # Scrollable frame for checkboxes
+        canvas = tk.Canvas(dialog)
+        scrollbar = tk.Scrollbar(dialog, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Create checkboxes for each value
+        check_vars = []
+        for value in available_values:
+            var = tk.BooleanVar()
+            check_vars.append(var)
+            cb = tk.Checkbutton(scrollable_frame, text=value, variable=var, 
+                               font=("Arial", 9), anchor="w")
+            cb.pack(fill=tk.X, padx=10, pady=2)
+        
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Footer with OK/Cancel buttons
+        footer_frame = tk.Frame(dialog)
+        footer_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        def apply_selection():
+            selected = [available_values[i] for i, var in enumerate(check_vars) if var.get()]
+            
+            if not selected:
+                messagebox.showwarning("No Selection", "Please select at least one value.")
+                return
+            
+            # Format based on operator
+            if operator in ['$in', '$nin', '$all']:
+                # Array format
+                formatted = '[' + ', '.join(f'"{v}"' if not v.replace('.','',1).replace('-','',1).isdigit() else v for v in selected) + ']'
+            else:
+                # Single value or comma-separated
+                if len(selected) == 1:
+                    formatted = selected[0]
+                else:
+                    # Multiple values for non-array operators - join with comma
+                    formatted = ', '.join(selected)
+            
+            self.value_combo.set(formatted)
+            dialog.destroy()
+        
+        tk.Button(footer_frame, text="OK", command=apply_selection, 
+                 bg="#4CAF50", fg="white", font=("Arial", 9, "bold"), width=10).pack(side=tk.RIGHT, padx=5)
+        tk.Button(footer_frame, text="Cancel", command=dialog.destroy,
+                 font=("Arial", 9), width=10).pack(side=tk.RIGHT)
+    
+    def add_condition(self):
+        """Add a query condition to the builder"""
+        field = self.field_combo.get()
+        operator = self.operator_combo.get()
+        value = self.value_combo.get().strip()
+        
+        if not field:
+            messagebox.showwarning("Missing Field", "Please select a field.")
+            return
+        
+        if not operator:
+            messagebox.showwarning("Missing Operator", "Please select an operator.")
+            return
+        
+        if not value:
+            messagebox.showwarning("Missing Value", "Please enter a value.")
+            return
+        
+        # Create condition object
+        condition = {
+            'field': field,
+            'operator': operator,
+            'value': value
+        }
+        
+        self.query_conditions.append(condition)
+        self.update_conditions_display()
+        
+        # Clear value combo
+        self.value_combo.set('')
+        
+        # Update manual query text
+        self.build_query_from_conditions()
+    
+    def remove_condition(self, index):
+        """Remove a condition from the list"""
+        if 0 <= index < len(self.query_conditions):
+            del self.query_conditions[index]
+            self.update_conditions_display()
+            self.build_query_from_conditions()
+    
+    def clear_conditions(self):
+        """Clear all query conditions"""
+        self.query_conditions = []
+        self.update_conditions_display()
+        self.query_text.delete("1.0", tk.END)
+        self.query_text.insert(tk.END, '// Use Query Builder above or write manual query here\n{}')
+    
+    def update_conditions_display(self):
+        """Update the display of active conditions"""
+        # Clear existing widgets
+        for widget in self.conditions_frame.winfo_children():
+            widget.destroy()
+        
+        if not self.query_conditions:
+            tk.Label(self.conditions_frame, text="No conditions added yet", 
+                    font=("Arial", 9), fg="gray").pack(pady=10)
+            return
+        
+        # Display each condition
+        for i, condition in enumerate(self.query_conditions):
+            cond_frame = tk.Frame(self.conditions_frame, relief=tk.RAISED, bd=1, bg="#f0f0f0")
+            cond_frame.pack(fill=tk.X, padx=2, pady=2)
+            
+            cond_text = f"{condition['field']} {condition['operator']} {condition['value']}"
+            tk.Label(cond_frame, text=cond_text, font=("Consolas", 9), 
+                    bg="#f0f0f0", anchor="w").pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+            
+            tk.Button(cond_frame, text="✖", command=lambda idx=i: self.remove_condition(idx),
+                     bg="#f44336", fg="white", font=("Arial", 8, "bold"),
+                     width=3).pack(side=tk.RIGHT, padx=2)
+    
+    def build_query_from_conditions(self):
+        """Build MongoDB query from conditions"""
+        if not self.query_conditions:
+            return
+        
+        # Get selected logical operator
+        logical_op = self.logical_combo.get()
+        if logical_op == "None (direct)":
+            logical_op = None
+        
+        # Build individual condition objects
+        condition_objs = []
+        
+        for condition in self.query_conditions:
+            field = condition['field']
+            operator = condition['operator']
+            value = condition['value']
+            
+            # Parse value (try to convert to appropriate type)
+            parsed_value = self.parse_value(value, operator)
+            
+            # Build single condition
+            cond_obj = {}
+            if operator == '$eq':
+                # Simple equality
+                cond_obj[field] = parsed_value
+            elif operator in ['$in', '$nin', '$all']:
+                # Array operators
+                if not isinstance(parsed_value, list):
+                    parsed_value = [parsed_value]
+                cond_obj[field] = {operator: parsed_value}
+            elif operator == '$exists':
+                # Boolean operators
+                cond_obj[field] = {operator: parsed_value.lower() == 'true'}
+            elif operator == '$regex':
+                # Regex operator
+                cond_obj[field] = {operator: parsed_value}
+            else:
+                # Other operators
+                cond_obj[field] = {operator: parsed_value}
+            
+            condition_objs.append(cond_obj)
+        
+        # Combine conditions based on logical operator
+        if logical_op and logical_op in self.logical_operators:
+            # Use logical operator to combine all conditions
+            query = {logical_op: condition_objs}
+        elif len(condition_objs) == 1:
+            # Single condition - use directly
+            query = condition_objs[0]
+        else:
+            # Multiple conditions without logical operator - merge into single object
+            # This will overwrite if same field used multiple times
+            query = {}
+            for cond in condition_objs:
+                query.update(cond)
+        
+        # Format and display query
+        query_str = json.dumps(query, indent=4)
+        self.query_text.delete("1.0", tk.END)
+        self.query_text.insert(tk.END, query_str)
+    
+    def parse_value(self, value, operator):
+        """Parse value string to appropriate Python type"""
+        value = value.strip()
+        
+        # Handle arrays for $in, $nin, $all operators
+        if operator in ['$in', '$nin', '$all']:
+            if value.startswith('[') and value.endswith(']'):
+                try:
+                    return json.loads(value)
+                except:
+                    # Split by comma
+                    return [v.strip().strip('"\'') for v in value[1:-1].split(',')]
+            else:
+                return [v.strip().strip('"\'') for v in value.split(',')]
+        
+        # Try to parse as number
+        try:
+            if '.' in value:
+                return float(value)
+            return int(value)
+        except ValueError:
+            pass
+        
+        # Check for boolean
+        if value.lower() in ['true', 'false']:
+            return value.lower() == 'true'
+        
+        # Check for null
+        if value.lower() == 'null':
+            return None
+        
+        # Return as string (remove quotes if present)
+        return value.strip('"\'')
     
     def create_menu_bar(self):
         """Create the menu bar with About menu"""
@@ -214,8 +802,7 @@ Note: The application will close and updater will handle the installation."""
                     # Already on latest version
                     self.root.after(0, lambda: messagebox.showinfo("No Updates", 
                         f"You are already using the latest version!\n\n"
-                        f"Current Version: {APP_VERSION} ({APP_CHANNEL})\n"
-                        f"Latest Version: {latest_version} ({latest_channel})"))
+                        f"Current Version: {APP_VERSION} ({APP_CHANNEL})\n"))
                         
             except requests.exceptions.RequestException as e:
                 self.root.after(0, lambda: messagebox.showerror("Connection Error", 
@@ -326,14 +913,7 @@ Repository: github.com/Rushikesh-techy/MongoDb-Query-Generator
         """
         
         messagebox.showinfo("About this Version", about_text)
-    
-    def on_operation_change(self, event):
-        """Update labels based on operation type"""
-        operation = self.operation.get()
-        if operation in ["insertOne", "insertMany"]:
-            self.document_text.delete("1.0", tk.END)
-            self.document_text.insert(tk.END, '{\n    field: "value"\n}')
-        
+            
     def generate_query(self):
         try:
             db_name = self.db_name.get().strip()
@@ -378,6 +958,10 @@ Repository: github.com/Rushikesh-techy/MongoDb-Query-Generator
                 js_query += ');\n\n'
                 js_query += 'printjson({ result: result });'
             
+            else:
+                messagebox.showerror("Error", f"Unsupported operation: {operation}")
+                return
+            
             # Display result
             self.result_text.delete("1.0", tk.END)
             self.result_text.insert(tk.END, js_query)
@@ -420,11 +1004,14 @@ Repository: github.com/Rushikesh-techy/MongoDb-Query-Generator
         self.db_name.delete(0, tk.END)
         self.collection_name.delete(0, tk.END)
         self.query_text.delete("1.0", tk.END)
-        self.query_text.insert(tk.END, '{\n    bpc: 70022487,\n    documentCode: {\n        \'$in\': [\n            "uuid-1",\n            "uuid-2"\n        ]\n    }\n}')
+        self.query_text.insert(tk.END, '// Use Query Builder above or write manual query here\n{}')
         self.document_text.delete("1.0", tk.END)
-        self.document_text.insert(tk.END, '{ timelinesPostponedOn: new Date() }')
+        self.document_text.insert(tk.END, '{ Field: Value }')
         self.result_text.delete("1.0", tk.END)
         self.operation.current(0)
+        self.query_conditions = []
+        self.update_conditions_display()
+        self.value_combo.set('')
         self.generated_query = None
 
 if __name__ == "__main__":
