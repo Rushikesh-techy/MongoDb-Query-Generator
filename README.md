@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-0.4-blue)
+![Version](https://img.shields.io/badge/version-0.5-blue)
 ![Channel](https://img.shields.io/badge/channel-beta-orange)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-proprietary-red)
@@ -634,7 +634,7 @@ Each condition also shows a **#1**, **#2**, etc. badge indicating its group numb
 - **OS**: Windows 10 or later (64-bit)
 - **RAM**: 100 MB available memory
 - **Storage**: 25 MB free disk space
-- **Display**: 1024x768 resolution minimum
+- **Display**: 1280x720 resolution minimum
 - **Internet**: Required for update checks only
 
 ### Recommended

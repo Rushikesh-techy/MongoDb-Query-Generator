@@ -10,7 +10,7 @@ import threading
 import json
 
 # Version Information
-APP_VERSION = "0.4"
+APP_VERSION = "0.5"
 APP_CHANNEL = "Beta"
 APP_NAME = "MongoDB Query Generator"
 GITHUB_REPO = "Rushikesh-techy/MongoDb-Query-Generator"
@@ -21,7 +21,7 @@ class MongoDBQueryGenerator:
         self.root.title(f"{APP_NAME}")
         
         # Set window size and allow maximizing
-        self.root.geometry("1920x1080")  # Increased from 1100x700
+        self.root.geometry("1920x1080")  # Resolution
         self.root.state('zoomed')
         self.root.minsize(1920, 1080)  # Increased minimum size
         
@@ -167,9 +167,9 @@ class MongoDBQueryGenerator:
         self.condition_group_combo.current(0)  # Default to None
         
         tk.Button(controls_frame1_5, text="+ Add", command=self.add_condition,
-                 bg="#4CAF50", fg="white", font=("Arial", 8, "bold"), width=8).pack(side=tk.LEFT, padx=5)
-        tk.Button(controls_frame1_5, text="Clear All", command=self.clear_conditions,
-                 bg="#f44336", fg="white", font=("Arial", 8, "bold"), width=10).pack(side=tk.LEFT, padx=2)
+                 bg="#4CAF50", fg="white", font=("Arial", 8, "bold"), width=7).pack(side=tk.LEFT, padx=5)
+        tk.Button(controls_frame1_5, text="Clear Conditions", command=self.clear_conditions,
+                 bg="#f44336", fg="white", font=("Arial", 8, "bold"), width=14).pack(side=tk.LEFT, padx=2)
         tk.Button(controls_frame1_5, text="👁 View Query", command=self.view_generated_query,
                  bg="#FF9800", fg="white", font=("Arial", 8, "bold"), width=12).pack(side=tk.LEFT, padx=2)
         
@@ -207,6 +207,13 @@ class MongoDBQueryGenerator:
         self.conditions_canvas_window = self.conditions_canvas.create_window((0, 0), window=self.conditions_frame, anchor="nw")
         self.conditions_frame.bind("<Configure>", lambda e: self.conditions_canvas.configure(scrollregion=self.conditions_canvas.bbox("all")))
         
+        # Enable mouse wheel scrolling for conditions canvas
+        def on_conditions_mousewheel(event):
+            self.conditions_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        self.conditions_canvas.bind("<Enter>", lambda e: self.conditions_canvas.bind_all("<MouseWheel>", on_conditions_mousewheel))
+        self.conditions_canvas.bind("<Leave>", lambda e: self.conditions_canvas.unbind_all("<MouseWheel>"))
+        
         # Manual Query Section (initially hidden)
         self.manual_label = tk.Label(root, text="Manual Query:", font=("Arial", 10, "bold"))
         self.manual_label.grid(row=2, column=0, padx=10, pady=5, sticky="nw")
@@ -236,7 +243,7 @@ class MongoDBQueryGenerator:
                  bg="#2196F3", fg="white", font=("Arial", 10, "bold"), width=15).pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Copy to Clipboard", command=self.copy_to_clipboard, 
                  bg="#FF9800", fg="white", font=("Arial", 10, "bold"), width=15).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Clear", command=self.clear_fields, 
+        tk.Button(button_frame, text="Clear All", command=self.clear_fields, 
                  bg="#f44336", fg="white", font=("Arial", 10, "bold"), width=10).pack(side=tk.LEFT, padx=5)
         
         # Result Display
@@ -282,6 +289,9 @@ class MongoDBQueryGenerator:
         copyright_label = tk.Label(status_bar, text="© 2025 Rushikesh Patil", 
                                   font=("Arial", 9), anchor=tk.E, padx=10)
         copyright_label.pack(side=tk.RIGHT)
+        
+        # Check for updates on startup (after UI is ready)
+        self.root.after(1000, self.startup_update_check)
     
     def toggle_query_mode(self):
         """Toggle between Query Builder and Manual Query modes"""
@@ -360,7 +370,7 @@ class MongoDBQueryGenerator:
                                 field_values[field_path] = set()
                             
                             # Limit stored values to prevent memory issues
-                            if len(field_values[field_path]) < 100:
+                            if len(field_values[field_path]) < 1000:
                                 field_values[field_path].add(str(unwrapped_value))
                         
                         if isinstance(value, (dict, list)):
@@ -373,7 +383,7 @@ class MongoDBQueryGenerator:
             # Handle both single document and array of documents
             if isinstance(data, list) and len(data) > 0:
                 # MongoDB Compass exports as array - process documents to get all possible fields
-                for doc in data[:50]:  # Process first 50 documents for comprehensive schema
+                for doc in data[:1000]:  # Process first 1000 documents for comprehensive schema
                     extract_fields(doc)
             else:
                 extract_fields(data)
@@ -885,8 +895,179 @@ class MongoDBQueryGenerator:
             messagebox.showinfo("Request a Feature", 
                               "Please visit:\nhttps://github.com/Rushikesh-techy/MongoDb-Query-Generator/issues\n\nto request a new feature.")
     
+    def startup_update_check(self):
+        """Silently check for updates on startup and show dialog only if update is available"""
+        def check_in_background():
+            try:                
+                # Fetch all releases from GitHub API (including prereleases)
+                api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
+                response = requests.get(api_url, timeout=10)
+                
+                response.raise_for_status()
+                releases = response.json()
+                
+                if not releases or len(releases) == 0:
+                    # No releases found - do nothing on startup
+                    return
+                
+                # Get the first (latest) release
+                release_data = releases[0]
+                
+                # Extract version information
+                latest_version = release_data['tag_name'].lstrip('v').lower().removesuffix('-beta').removesuffix('-alpha').removesuffix('-stable')
+                release_name = release_data['name']
+                release_notes = release_data['body']
+                
+                # Extract channel from release name or body
+                latest_channel = "Stable"  # Default
+                if release_name:
+                    if 'beta' in release_name.lower() or 'β' in release_name.lower():
+                        latest_channel = "Beta"
+                    elif 'alpha' in release_name.lower() or 'α' in release_name.lower():
+                        latest_channel = "Alpha"
+                
+                # Find the .exe assets and changelog
+                download_url = None
+                updater_url = None
+                changelog_url = None
+                
+                for asset in release_data.get('assets', []):
+                    if asset['name'].lower() == 'mongodbquerygenerator.exe':
+                        download_url = asset['browser_download_url']
+                    elif asset['name'].lower() == 'updater.exe':
+                        updater_url = asset['browser_download_url']
+                    elif asset['name'].lower() == 'changelog.txt':
+                        changelog_url = asset['browser_download_url']
+                
+                # Compare versions - only show dialog if update is available
+                if self.compare_versions(latest_version, APP_VERSION) > 0:
+                    # New version available - show update dialog
+                    self.root.after(0, lambda: self.show_startup_update_dialog(
+                        latest_version, latest_channel, release_name, release_notes,
+                        download_url, updater_url, changelog_url))
+                # If no update, do nothing (silent check)
+                        
+            except:
+                # Silently fail on startup - don't bother user with errors
+                pass
+        
+        # Run check in background thread
+        threading.Thread(target=check_in_background, daemon=True).start()
+    
+    def show_startup_update_dialog(self, latest_version, latest_channel, release_name, release_notes,
+                                   download_url, updater_url, changelog_url, is_manual_check=False):
+        """Show a dialog when an update is available (used for both startup and manual checks)"""
+        # Create custom update dialog
+        update_dialog = tk.Toplevel(self.root)
+        update_dialog.title("Update Available")
+        update_dialog.geometry("600x400")
+        update_dialog.transient(self.root)
+        update_dialog.resizable(True, False)
+        update_dialog.grab_set()
+        
+        # Center the dialog
+        update_dialog.update_idletasks()
+        width = update_dialog.winfo_width()
+        height = update_dialog.winfo_height()
+        x = (update_dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (update_dialog.winfo_screenheight() // 2) - (height // 2)
+        update_dialog.geometry(f'{width}x{height}+{x}+{y}')
+        
+        # Header
+        header_frame = tk.Frame(update_dialog, bg="#4CAF50", pady=10)
+        header_frame.pack(fill=tk.X)
+        
+        tk.Label(header_frame, text="🎉 New Version Available!", 
+                font=("Arial", 14, "bold"), bg="#4CAF50", fg="white").pack()
+        
+        # Version info frame
+        info_frame = tk.Frame(update_dialog, padx=20, pady=10)
+        info_frame.pack(fill=tk.X)
+        
+        version_info = f"""Current Version: {APP_VERSION} ({APP_CHANNEL})
+Latest Version: {latest_version} ({latest_channel})"""
+        
+        tk.Label(info_frame, text=version_info, font=("Arial", 10), justify=tk.LEFT).pack(anchor="w")
+        
+        # Changelog section
+        changelog_frame = tk.Frame(update_dialog, padx=20, pady=2)
+        changelog_frame.pack(fill=tk.X)
+        
+        tk.Label(changelog_frame, text="What's New:", font=("Arial", 10, "bold")).pack(anchor="w", pady=(0, 3))
+        
+        # Scrollable changelog preview
+        changelog_text = scrolledtext.ScrolledText(changelog_frame, height=10, font=("Arial", 9), 
+                                                   wrap=tk.WORD, bg="#f5f5f5", relief=tk.RIDGE)
+        changelog_text.pack(fill=tk.X)
+        
+        # Extract and show short changelog (first 500 characters or first 5 lines)
+        if release_notes:
+            lines = release_notes.split('\n')
+            short_changelog = '\n'.join(lines[:8]) if len(lines) > 8 else release_notes
+            if len(release_notes) > 500:
+                short_changelog = release_notes[:500] + "..."
+            changelog_text.insert("1.0", short_changelog)
+        else:
+            changelog_text.insert("1.0", "No changelog available for this release.")
+        
+        changelog_text.config(state=tk.DISABLED)
+        
+        # Link to full changelog
+        link_frame = tk.Frame(update_dialog, padx=20, pady=3)
+        link_frame.pack(fill=tk.X)
+        
+        def open_full_changelog():
+            """Open full changelog in browser"""
+            if changelog_url:
+                try:
+                    webbrowser.open(changelog_url)
+                except:
+                    webbrowser.open(f"https://github.com/{GITHUB_REPO}/releases/tag/v{latest_version}")
+            else:
+                try:
+                    webbrowser.open(f"https://github.com/{GITHUB_REPO}/releases/tag/v{latest_version}")
+                except:
+                    pass
+        
+        changelog_link = tk.Label(link_frame, text="📄 View Full Changelog", 
+                                 font=("Arial", 9, "underline"), fg="#2196F3", cursor="hand2")
+        changelog_link.pack(anchor="w")
+        changelog_link.bind("<Button-1>", lambda e: open_full_changelog())
+        
+        # Info note
+        note_frame = tk.Frame(update_dialog, padx=20, pady=5)
+        note_frame.pack(fill=tk.X)
+        
+        tk.Label(note_frame, text="ℹ️ Note: The application will automatically close and the updater will handle the installation.",
+                font=("Arial", 9), fg="#555", justify=tk.LEFT).pack(anchor="w")
+        
+        # Buttons frame
+        button_frame = tk.Frame(update_dialog, padx=20, pady=10)
+        button_frame.pack(fill=tk.X)
+        
+        def install_update():
+            """Install the update"""
+            update_dialog.destroy()
+            if download_url:
+                self.launch_updater(download_url, latest_version, updater_url, changelog_url)
+            else:
+                try:
+                    webbrowser.open(f"https://github.com/{GITHUB_REPO}/releases/latest")
+                except:
+                    pass
+        
+        def skip_update():
+            """Skip this update"""
+            update_dialog.destroy()
+        
+        tk.Button(button_frame, text="Install Now", command=install_update,
+                 bg="#4CAF50", fg="white", font=("Arial", 10, "bold"), width=12).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Later", command=skip_update,
+                 font=("Arial", 10), width=12).pack(side=tk.LEFT, padx=5)
+
+    
     def check_updates(self):
-        """Check for application updates from GitHub"""
+        """Check for application updates from GitHub (manual check from menu)"""
         def check_in_background():
             try:                
                 # Fetch all releases from GitHub API (including prereleases)
@@ -935,26 +1116,10 @@ class MongoDBQueryGenerator:
                 
                 # Compare versions
                 if self.compare_versions(latest_version, APP_VERSION) > 0:
-                    # New version available
-                    update_msg = f"""New Version Available!
-
-Current Version: {APP_VERSION} ({APP_CHANNEL})
-Latest Version: {latest_version} ({latest_channel})
-
-Release: {release_name}
-
-Do you want to download and install the update?
-
-Note: The application will close and updater will handle the installation."""
-                    
-                    if download_url:
-                        result = messagebox.askyesno("Update Available", update_msg)
-                        if result:
-                            self.launch_updater(download_url, latest_version, updater_url, changelog_url)
-                    else:
-                        messagebox.showinfo("Update Available", 
-                            f"{update_msg}\n\nPlease visit GitHub to download manually:\n"
-                            f"https://github.com/{GITHUB_REPO}/releases/latest")
+                    # New version available - show update dialog
+                    self.root.after(0, lambda: self.show_startup_update_dialog(
+                        latest_version, latest_channel, release_name, release_notes,
+                        download_url, updater_url, changelog_url, is_manual_check=True))
                 else:
                     # Already on latest version
                     self.root.after(0, lambda: messagebox.showinfo("No Updates", 
@@ -1082,17 +1247,15 @@ Note: The application will close and updater will handle the installation."""
         tk.Frame(content_frame, height=2, bg="#e0e0e0").pack(fill=tk.X, pady=10)
         
         # Latest Features
-        features_text = """Latest Features (v0.4):
-• Visual Query Builder with dropdown selections
-• JSON Schema Import to extract fields and values
-• Smart value suggestions from imported data
-• Multi-select value picker with checkboxes
-• Flexible grouping system with logical operators
-• Color-coded condition display
-• View Query button for quick preview
-• Query mode toggle (Builder vs Manual)
-• Mouse wheel scrolling in dialogs
-• Support for 18 MongoDB operators"""
+        features_text = """What's New in v0.5:
+• Automatic startup update check (silent, non-intrusive)
+• Beautiful update dialog with changelog preview
+• Clickable "View Full Changelog" link in update dialog
+• Unified update UI for manual & automatic checks
+• Increased value extraction limits:
+  - Up to 1,000 unique values per field
+  - Processes up to 1,000 documents
+• Mouse wheel scrolling in Active Conditions section"""
         
         tk.Label(content_frame, text=features_text, 
                 font=("Arial", 9), justify=tk.LEFT, anchor="w").pack(fill=tk.X, pady=10)
