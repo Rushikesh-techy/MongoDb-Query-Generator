@@ -1,6 +1,27 @@
 MongoDB Query Generator - Changelog
 =====================================
 
+Version 0.5 (Beta) - December 13, 2025
+--------------------------------------
+NEW FEATURES:
+✨ Automatic startup update check - checks for updates silently on app launch
+✨ Beautiful update dialog with changelog preview and full changelog link
+✨ Unified update UI for both automatic and manual update checks
+✨ Non-intrusive update notifications (only shows when update is available)
+✨ Increased value extraction limits:
+   - Up to 1,000 unique values per field (previously 100)
+   - Processes up to 1,000 documents (previously 50)
+✨ Mouse wheel scrolling in Active Conditions section
+
+IMPROVEMENTS:
+🔧 Enhanced update experience with "Install Now" and "Later" options
+🔧 Update dialog shows release name, version comparison, and short changelog
+🔧 Resizable update dialog for better visibility
+🔧 Compact and professional update notification layout
+🔧 Better value extraction from larger JSON datasets
+
+---
+
 Version 0.4 (Beta) - November 28, 2025
 --------------------------------------
 NEW FEATURES:
