@@ -10,7 +10,7 @@ import threading
 import json
 
 # Version Information
-APP_VERSION = "0.5"
+APP_VERSION = "0.6"
 APP_CHANNEL = "Beta"
 APP_NAME = "MongoDB Query Generator"
 GITHUB_REPO = "Rushikesh-techy/MongoDb-Query-Generator"
@@ -87,10 +87,15 @@ class MongoDBQueryGenerator:
         tk.Radiobutton(op_frame, text="Manual", variable=self.query_mode, value="manual",
                       font=("Arial", 9), command=self.toggle_query_mode).pack(side=tk.LEFT, padx=2)
         
-        # Import JSON Button
+        # Import JSON Button (for Builder mode)
         self.import_btn = tk.Button(op_frame, text="📁 Import JSON Schema", command=self.import_json_schema,
-                               bg="#9C27B0", fg="white", font=("Arial", 9, "bold"))
+                               bg="#9C27B0", fg="white", font=("Arial", 9, "bold"), padx=5)
         self.import_btn.pack(side=tk.RIGHT, padx=(10, 0))
+        
+        # Clear Manual Query Button (for Manual mode)
+        self.clear_manual_btn = tk.Button(op_frame, text="🗑 Clear Query", command=self.clear_manual_query,
+                               bg="#f44336", fg="white", font=("Arial", 9, "bold"), padx=5)
+        # Initially hidden (shown only in manual mode)
         
         # Query Builder Section
         self.query_builder_label = tk.Label(root, text="Query Builder:", font=("Arial", 10, "bold"))
@@ -156,7 +161,7 @@ class MongoDBQueryGenerator:
         
         # Group number for explicit grouping
         tk.Label(controls_frame1_5, text="Group #:", font=("Arial", 9)).pack(side=tk.LEFT, padx=(15, 2))
-        self.group_number_combo = ttk.Combobox(controls_frame1_5, width=5, values=["1", "2", "3", "4", "5"], state="readonly")
+        self.group_number_combo = ttk.Combobox(controls_frame1_5, width=5, values=["1", "2", "3", "4"], state="readonly")
         self.group_number_combo.pack(side=tk.LEFT, padx=2)
         self.group_number_combo.current(0)  # Default to group 1
         
@@ -196,12 +201,14 @@ class MongoDBQueryGenerator:
         conditions_canvas_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         self.conditions_canvas = tk.Canvas(conditions_canvas_frame, height=100)
-        conditions_scrollbar = tk.Scrollbar(conditions_canvas_frame, orient="vertical", command=self.conditions_canvas.yview)
+        conditions_vscrollbar = tk.Scrollbar(conditions_canvas_frame, orient="vertical", command=self.conditions_canvas.yview)
+        conditions_hscrollbar = tk.Scrollbar(conditions_canvas_frame, orient="horizontal", command=self.conditions_canvas.xview)
         self.conditions_frame = tk.Frame(self.conditions_canvas)
         
-        self.conditions_canvas.configure(yscrollcommand=conditions_scrollbar.set)
+        self.conditions_canvas.configure(yscrollcommand=conditions_vscrollbar.set, xscrollcommand=conditions_hscrollbar.set)
         
-        conditions_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        conditions_vscrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        conditions_hscrollbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.conditions_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         self.conditions_canvas_window = self.conditions_canvas.create_window((0, 0), window=self.conditions_frame, anchor="nw")
@@ -211,8 +218,18 @@ class MongoDBQueryGenerator:
         def on_conditions_mousewheel(event):
             self.conditions_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         
-        self.conditions_canvas.bind("<Enter>", lambda e: self.conditions_canvas.bind_all("<MouseWheel>", on_conditions_mousewheel))
-        self.conditions_canvas.bind("<Leave>", lambda e: self.conditions_canvas.unbind_all("<MouseWheel>"))
+        def on_conditions_horizontal_mousewheel(event):
+            self.conditions_canvas.xview_scroll(int(-1*(event.delta/120)), "units")
+        
+        # Store scroll functions for reuse
+        self.on_conditions_mousewheel = on_conditions_mousewheel
+        self.on_conditions_horizontal_mousewheel = on_conditions_horizontal_mousewheel
+        
+        # Bind scrolling to canvas and frame
+        self.conditions_canvas.bind("<MouseWheel>", on_conditions_mousewheel)
+        self.conditions_canvas.bind("<Shift-MouseWheel>", on_conditions_horizontal_mousewheel)
+        self.conditions_frame.bind("<MouseWheel>", on_conditions_mousewheel)
+        self.conditions_frame.bind("<Shift-MouseWheel>", on_conditions_horizontal_mousewheel)
         
         # Manual Query Section (initially hidden)
         self.manual_label = tk.Label(root, text="Manual Query:", font=("Arial", 10, "bold"))
@@ -290,6 +307,9 @@ class MongoDBQueryGenerator:
                                   font=("Arial", 9), anchor=tk.E, padx=10)
         copyright_label.pack(side=tk.RIGHT)
         
+        # Initialize conditions display
+        self.update_conditions_display()
+        
         # Check for updates on startup (after UI is ready)
         self.root.after(1000, self.startup_update_check)
     
@@ -304,6 +324,7 @@ class MongoDBQueryGenerator:
             self.manual_label.grid_remove()
             self.manual_frame.grid_remove()
             self.import_btn.pack(side=tk.RIGHT, padx=(10, 0))  # Show import button
+            self.clear_manual_btn.pack_forget()  # Hide clear manual button
         else:
             # Show Manual Query, hide Query Builder
             self.query_builder_label.grid_remove()
@@ -311,6 +332,12 @@ class MongoDBQueryGenerator:
             self.manual_label.grid()
             self.manual_frame.grid()
             self.import_btn.pack_forget()  # Hide import button
+            self.clear_manual_btn.pack(side=tk.RIGHT, padx=(10, 0))  # Show clear manual button
+    
+    def clear_manual_query(self):
+        """Clear the manual query text area"""
+        self.query_text.delete("1.0", tk.END)
+        self.query_text.insert(tk.END, '// Write your MongoDB query here\n{}')
         
     def import_json_schema(self):
         """Import JSON file from MongoDB Compass export to extract schema"""
@@ -608,7 +635,20 @@ class MongoDBQueryGenerator:
             'group_op': group_op
         }
         
-        self.query_conditions.append(condition)
+        # Check if condition with same field and operator already exists
+        existing_index = None
+        for i, cond in enumerate(self.query_conditions):
+            if cond['field'] == field and cond['operator'] == operator:
+                existing_index = i
+                break
+        
+        if existing_index is not None:
+            # Update existing condition
+            self.query_conditions[existing_index] = condition
+        else:
+            # Add new condition
+            self.query_conditions.append(condition)
+        
         self.update_conditions_display()
         
         # Clear value combo
@@ -628,8 +668,7 @@ class MongoDBQueryGenerator:
         """Clear all query conditions"""
         self.query_conditions = []
         self.update_conditions_display()
-        self.query_text.delete("1.0", tk.END)
-        self.query_text.insert(tk.END, '// Use Query Builder above or write manual query here\n{}')
+        self.generated_query = "{}"
     
     def view_generated_query(self):
         """Show the generated query in a popup window"""
@@ -637,11 +676,11 @@ class MongoDBQueryGenerator:
             messagebox.showinfo("No Conditions", "Please add at least one condition to generate a query.")
             return
         
-        # Build the query (this updates self.query_text internally)
+        # Build the query (stores in self.generated_query)
         self.build_query_from_conditions()
         
         # Get the generated query text
-        query_text = self.query_text.get("1.0", tk.END).strip()
+        query_text = self.generated_query if hasattr(self, 'generated_query') else "{}"
         
         # Create popup window
         view_window = tk.Toplevel(self.root)
@@ -710,6 +749,11 @@ class MongoDBQueryGenerator:
             cond_frame = tk.Frame(self.conditions_frame, relief=tk.RAISED, bd=1, bg=bg_color)
             cond_frame.pack(fill=tk.X, padx=2, pady=2)
             
+            # Remove button
+            tk.Button(cond_frame, text="✖", command=lambda idx=i: self.remove_condition(idx),
+                     bg="#f44336", fg="white", font=("Arial", 8, "bold"),
+                     width=3).pack(side=tk.LEFT, padx=3)
+            
             # Show group number badge
             tk.Label(cond_frame, text=f"#{group_num}", font=("Arial", 8, "bold"), 
                     bg="#555", fg="white", width=4, relief=tk.RAISED).pack(side=tk.LEFT, padx=2)
@@ -723,10 +767,12 @@ class MongoDBQueryGenerator:
             tk.Label(cond_frame, text=cond_text, font=("Consolas", 9), 
                     bg=bg_color, anchor="w").pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
             
-            # Remove button
-            tk.Button(cond_frame, text="✖", command=lambda idx=i: self.remove_condition(idx),
-                     bg="#f44336", fg="white", font=("Arial", 8, "bold"),
-                     width=3).pack(side=tk.RIGHT, padx=2)
+            # Bind scroll events to the condition frame and all its children
+            cond_frame.bind("<MouseWheel>", self.on_conditions_mousewheel)
+            cond_frame.bind("<Shift-MouseWheel>", self.on_conditions_horizontal_mousewheel)
+            for child in cond_frame.winfo_children():
+                child.bind("<MouseWheel>", self.on_conditions_mousewheel)
+                child.bind("<Shift-MouseWheel>", self.on_conditions_horizontal_mousewheel)
     
     def build_query_from_conditions(self):
         """Build MongoDB query from conditions with explicit group numbers"""
@@ -776,10 +822,21 @@ class MongoDBQueryGenerator:
         if len(groups_dict) == 0 and len(ungrouped_conditions) == 0:
             query = {}
         elif len(groups_dict) == 0 and len(ungrouped_conditions) > 0:
-            # Only ungrouped conditions - merge them
+            # Only ungrouped conditions - check for field conflicts
             query = {}
+            fields_seen = {}
+            
             for cond in ungrouped_conditions:
+                field_name = list(cond.keys())[0]
+                if field_name in fields_seen:
+                    # Field conflict - need to use $and
+                    query = {'$and': ungrouped_conditions}
+                    break
+                fields_seen[field_name] = True
                 query.update(cond)
+            else:
+                # No conflicts, simple merge worked
+                pass
         elif len(groups_dict) == 1 and len(ungrouped_conditions) == 0:
             # Single group, no ungrouped
             group_num = list(groups_dict.keys())[0]
@@ -813,9 +870,27 @@ class MongoDBQueryGenerator:
                 else:
                     result[group_op].append(group_query)
             
-            # Add ungrouped conditions directly to result
-            for cond in ungrouped_conditions:
-                result.update(cond)
+            # Add ungrouped conditions to result
+            if ungrouped_conditions:
+                # Check if ungrouped conditions have field conflicts
+                ungrouped_fields = {}
+                has_conflict = False
+                for cond in ungrouped_conditions:
+                    field_name = list(cond.keys())[0]
+                    if field_name in ungrouped_fields:
+                        has_conflict = True
+                        break
+                    ungrouped_fields[field_name] = True
+                
+                if has_conflict:
+                    # Wrap ungrouped conditions in $and
+                    if '$and' not in result:
+                        result['$and'] = []
+                    result['$and'].extend(ungrouped_conditions)
+                else:
+                    # No conflicts, add directly
+                    for cond in ungrouped_conditions:
+                        result.update(cond)
             
             # If only one operator type at top level, use it directly
             if len(result) == 1 and list(result.keys())[0] in ['$and', '$or', '$nor']:
@@ -825,10 +900,11 @@ class MongoDBQueryGenerator:
                 # Multiple operators at top level or mix - keep them separate
                 query = result
         
-        # Format and display query
+        # Format query and store it (don't automatically display)
         query_str = json.dumps(query, indent=4)
-        self.query_text.delete("1.0", tk.END)
-        self.query_text.insert(tk.END, query_str)
+        
+        # Store the generated query for later use
+        self.generated_query = query_str
     
     def parse_value(self, value, operator):
         """Parse value string to appropriate Python type"""
@@ -1247,15 +1323,15 @@ Latest Version: {latest_version} ({latest_channel})"""
         tk.Frame(content_frame, height=2, bg="#e0e0e0").pack(fill=tk.X, pady=10)
         
         # Latest Features
-        features_text = """What's New in v0.5:
-• Automatic startup update check (silent, non-intrusive)
-• Beautiful update dialog with changelog preview
-• Clickable "View Full Changelog" link in update dialog
-• Unified update UI for manual & automatic checks
-• Increased value extraction limits:
-  - Up to 1,000 unique values per field
-  - Processes up to 1,000 documents
-• Mouse wheel scrolling in Active Conditions section"""
+        features_text = """What's New in v0.6:
+• Horizontal scrollbar in Active Conditions
+• Mouse wheel scrolling (vertical + Shift for horizontal)
+• Clear Query button for Manual mode
+• Complete separation of Builder & Manual modes
+• Smart condition updates for same field+operator
+• Proper handling of multiple conditions on same field ($and wrapper)
+• "No conditions added yet" message on startup
+• Fixed manual query being overwritten by builder actions"""
         
         tk.Label(content_frame, text=features_text, 
                 font=("Arial", 9), justify=tk.LEFT, anchor="w").pack(fill=tk.X, pady=10)
@@ -1330,8 +1406,13 @@ Latest Version: {latest_version} ({latest_channel})"""
                 messagebox.showerror("Error", "Database and Collection names are required!")
                 return
             
-            # Get query/filter text
-            query_str = self.query_text.get("1.0", tk.END).strip()
+            # Get query/filter text based on mode
+            if self.query_mode.get() == "builder":
+                # Use builder-generated query
+                query_str = self.generated_query if hasattr(self, 'generated_query') and self.generated_query else "{}"
+            else:
+                # Use manual query from text area
+                query_str = self.query_text.get("1.0", tk.END).strip()
             
             # Build JavaScript query
             js_query = f'let databaseName = "{db_name}";\n'
