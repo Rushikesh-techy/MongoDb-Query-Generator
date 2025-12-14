@@ -1,6 +1,29 @@
 MongoDB Query Generator - Changelog
 =====================================
 
+Version 0.6 (Beta) - December 14, 2025
+--------------------------------------
+NEW FEATURES:
+✨ Clear Query button for Manual mode
+✨ Smart condition updates - replaces existing condition when same field and operator is added
+
+IMPROVEMENTS:
+🔧 Shifted the '✖' button of each Active Conditions to left
+🔧 Reduced the number of Groups from 5 to 4
+🔧 Complete separation of Builder and Manual modes (independent operation)
+🔧 Mouse wheel scrolling (vertical + horizontal) in Active Conditions
+🔧 Proper handling of multiple conditions on same field using $and wrapper
+🔧 Builder mode conditions no longer affect manual query text
+🔧 Mouse wheel scrolling works when hovering over any condition widget
+🔧 Improved query generation logic for field conflicts
+
+BUG FIXES:
+🐛 Fixed "No conditions added yet" message didn't display on startup
+🐛 Fixed manual query being overwritten when adding/clearing builder conditions
+🐛 Fixed duplicate field conditions not wrapping in $and array
+
+---
+
 Version 0.5 (Beta) - December 13, 2025
 --------------------------------------
 NEW FEATURES:
@@ -68,7 +91,7 @@ BUG FIXES:
 
 ---
 
-Version 0.3 (Beta) - Previous Release
+Version 0.3 (Beta) - November 27, 2025
 --------------------------------------
 IMPROVEMENTS:
 🔧 Enhanced UI layout and responsiveness
@@ -77,7 +100,7 @@ IMPROVEMENTS:
 
 ---
 
-Version 0.2 (Beta) - Previous Release
+Version 0.2 (Beta) - November 25, 2025
 --------------------------------------
 NEW FEATURES:
 🔄 Added auto-update system
@@ -86,7 +109,7 @@ NEW FEATURES:
 
 ---
 
-Version 0.1 (Alpha) - Initial Release
+Version 0.1 (Alpha) - November 25, 2025
 -------------------------------------
 NEW FEATURES:
 🎉 Basic query generation for 7 MongoDB operations:
