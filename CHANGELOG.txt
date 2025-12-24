@@ -1,6 +1,52 @@
 MongoDB Query Generator - Changelog
 =====================================
 
+Version 0.7 (Beta) - December 24, 2025
+--------------------------------------
+NEW FEATURES:
+✨ Custom application icons - unique green database icon for main app, blue refresh icon for updater
+✨ Embedded icons support - icons bundled inside executables
+✨ Window icons - custom icons displayed in title bar, taskbar, and Alt+Tab
+✨ Update Document Builder Mode - build update documents visually with field-value pairs
+✨ Update Document Manual Mode - write update documents directly with JSON validation
+✨ Dynamic field rows in builder - add/remove fields with ➕ and ➖ buttons
+✨ Update operator support - $set, $unset, $inc, $push, $pull, $addToSet, $rename
+✨ MongoDB data type helpers - quick insert ObjectId, ISODate, Date, arrays, objects
+✨ Field Picker dialog - select fields from imported schema for update document
+✨ Large Value Editor - dedicated editor for complex values, arrays, and objects
+✨ JSON validation and formatting for update documents
+✨ Real-time validation with ✓/✗ indicators
+✨ Interactive tooltips on all buttons - hover to see helpful descriptions
+✨ Smart tooltip positioning - automatically adjusts to stay within screen boundaries
+✨ Tooltips in all dialog windows (Field Picker, Value Selector, Large Value Editor, etc.)
+✨ Info labels in builder modes with usage tips
+✨ Searchable comboboxes - type to filter options in all dropdowns
+
+IMPROVEMENTS:
+🔧 Automatic query formatting - generated queries are properly indented and readable
+🔧 Update/Insert document section visibility - auto-shows/hides based on operation type
+🔧 Dual-mode toggle for update documents (Builder vs Manual)
+🔧 Scrollable builder with mousewheel support for many field rows
+🔧 Copy document to clipboard functionality
+🔧 MongoDB extended JSON support (ObjectId, ISODate, Date)
+🔧 Auto-validation as you type in manual mode
+🔧 Format JSON button to prettify update documents
+🔧 Enhanced user experience with contextual help on every button
+🔧 Bold formatting for all informational labels
+🔧 Clearer tooltip messages for better understanding
+🔧 Improved "Select Values" tooltip for better clarity
+🔧 Added helpful info beside buttons in builder modes
+🔧 Generated query now shown in popup window instead of bottom text area
+🔧 Combobox filtering - type to search in Field, Operator, Value dropdowns
+
+BUG FIXES:
+🐛 Fixed weird queries when clicking Generate Query multiple times
+🐛 Fixed removed conditions not updating in generated query
+🐛 Fixed variable conflict between filter query and JavaScript query
+🐛 Query now properly updates when conditions are removed
+
+---
+
 Version 0.6 (Beta) - December 14, 2025
 --------------------------------------
 NEW FEATURES:
