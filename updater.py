@@ -22,6 +22,15 @@ class UpdaterApp:
         self.root.geometry("500x300")
         self.root.resizable(False, False)
         
+        # Set window icon
+        try:
+            from embedded_icons import get_updater_icon
+            icon_path = get_updater_icon()
+            if icon_path:
+                self.root.iconbitmap(icon_path)
+        except:
+            pass  # Ignore if icon not available
+        
         # Center window
         self.root.update_idletasks()
         width = self.root.winfo_width()
